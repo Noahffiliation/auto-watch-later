@@ -118,6 +118,35 @@ def save_check_time():
         f.write(current_time)
     return current_time
 
+def _get_channel_new_videos(youtube, channel_id, last_check_time):
+    """Helper to get new uploaded videos for a single channel."""
+    videos = []
+    try:
+        request = youtube.activities().list(
+            part="snippet,contentDetails",
+            channelId=channel_id,
+            publishedAfter=last_check_time,
+            maxResults=10
+        )
+        response = request.execute()
+        for item in response.get('items', []):
+            if item['snippet']['type'] == 'upload' and 'upload' in item.get('contentDetails', {}):
+                video_id = item['contentDetails']['upload']['videoId']
+                title = item['snippet']['title']
+                channel_title = item['snippet']['channelTitle']
+                videos.append({
+                    'id': video_id,
+                    'title': title,
+                    'channel': channel_title
+                })
+                print(f"Found new video: {title} ({channel_title})")
+    except Exception as e:
+        print(f"Error fetching activities for channel {channel_id}: {str(e)}")
+        if "quota" in str(e).lower():
+            print("Quota limit reached. Stopping further processing.")
+            return videos
+    return videos
+
 def get_new_videos(youtube, channel_ids, last_check_time):
     """Get new videos from subscribed channels published after the last check time.
 
@@ -136,36 +165,10 @@ def get_new_videos(youtube, channel_ids, last_check_time):
 
         for channel_id in batch_channels:
             try:
-                # Try using activities endpoint first (only costs 1 unit per request)
-                # This gets uploads and other channel activities
-                request = youtube.activities().list(
-                    part="snippet,contentDetails",
-                    channelId=channel_id,
-                    publishedAfter=last_check_time,
-                    maxResults=10
-                )
-
-                response = request.execute()
-
-                for item in response.get('items', []):
-                    # Check if this activity is an upload
-                    if item['snippet']['type'] == 'upload':
-                        if 'upload' in item.get('contentDetails', {}):
-                            video_id = item['contentDetails']['upload']['videoId']
-                            title = item['snippet']['title']
-                            channel_title = item['snippet']['channelTitle']
-                            new_videos.append({
-                                'id': video_id,
-                                'title': title,
-                                'channel': channel_title
-                            })
-                            print(f"Found new video: {title} ({channel_title})")
-
+                channel_videos = _get_channel_new_videos(youtube, channel_id, last_check_time)
+                new_videos.extend(channel_videos)
             except Exception as e:
-                print(f"Error fetching activities for channel {channel_id}: {str(e)}")
-                # If we hit quota limits, stop processing and use what we have
                 if "quota" in str(e).lower():
-                    print("Quota limit reached. Stopping further processing.")
                     return new_videos
 
     print(f"Found {len(new_videos)} new videos.")
