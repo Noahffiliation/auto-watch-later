@@ -43,10 +43,10 @@ def get_authenticated_service():
     credentials = None
 
     # Token pickle stores the user's credentials from previously successful logins
-    token = 'token.pickle'
-    if os.path.exists(token):
+    token_file = 'token.pickle'
+    if os.path.exists(token_file):
         print("Loading saved credentials...")
-        with open(token, 'rb') as token:
+        with open(token_file, 'rb') as token:
             credentials = pickle.load(token)
 
     # If there are no valid credentials available, let the user log in
@@ -70,7 +70,7 @@ def get_authenticated_service():
                 sys.exit(1)
 
         # Save the credentials for the next run
-        with open(token, 'wb') as token:
+        with open(token_file, 'wb') as token:
             pickle.dump(credentials, token)
 
     return build('youtube', 'v3', credentials=credentials)
