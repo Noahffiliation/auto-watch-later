@@ -108,71 +108,145 @@ def get_last_check_time():
                 return timestamp
 
     # Default to 1 day ago if no last check time is saved
-    one_day_ago = (datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=1)).isoformat('T') + 'Z'
+    one_day_ago = (datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=1)).strftime('%Y-%m-%dT%H:%M:%SZ')
     return one_day_ago
 
 def save_check_time():
     """Save the current time as the last check time."""
-    current_time = datetime.datetime.now(datetime.UTC).isoformat('T') + 'Z'
+    current_time = datetime.datetime.now(datetime.UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
     with open(LAST_CHECK_FILE, 'w') as f:
         f.write(current_time)
     return current_time
 
-def _get_channel_new_videos(youtube, channel_id, last_check_time):
-    """Helper to get new uploaded videos for a single channel."""
-    videos = []
+def get_new_videos(youtube, channel_ids, last_check_time):
+    """Get new videos from subscribed channels published after the last check time."""
+    print(f"Checking for new videos since {last_check_time}...")
+    new_videos = []
+
+    # Process channels in batches to avoid hitting quota limits too quickly
+    batch_size = 5
+    total_batches = len(channel_ids) // batch_size + (1 if len(channel_ids) % batch_size > 0 else 0)
+
+    for i in range(0, len(channel_ids), batch_size):
+        batch_channels = channel_ids[i:i+batch_size]
+        print(f"Processing batch {i//batch_size + 1} of {total_batches} ({len(batch_channels)} channels)")
+
+        batch_videos = process_channel_batch(youtube, batch_channels, last_check_time)
+        new_videos.extend(batch_videos)
+
+        # If we got an empty list but should have videos, we might have hit quota limits
+        if not batch_videos and i < len(channel_ids) - batch_size:
+            print("No videos found in this batch. Possible quota limitation. Continuing with next batch.")
+
+    print(f"Found {len(new_videos)} new videos.")
+    return new_videos
+
+def process_channel_batch(youtube, channel_ids, last_check_time):
+    """Process a batch of channels to find new videos."""
+    new_videos = []
+
+    for channel_id in channel_ids:
+        channel_videos = get_channel_videos(youtube, channel_id, last_check_time)
+        new_videos.extend(channel_videos)
+
+    return new_videos
+
+def get_channel_videos(youtube, channel_id, last_check_time):
+    """Get new videos from a specific channel."""
+
+    # Try using activities endpoint first
+    videos_from_activities = get_videos_from_activities(youtube, channel_id, last_check_time)
+    if videos_from_activities is not None:
+        return videos_from_activities
+
+    # Fall back to search API if activities endpoint fails
+    return get_videos_from_search(youtube, channel_id, last_check_time)
+
+def get_videos_from_activities(youtube, channel_id, last_check_time):
+    """Try to get videos using the activities endpoint."""
     try:
+        # Activities endpoint only costs 1 unit per request
         request = youtube.activities().list(
             part="snippet,contentDetails",
             channelId=channel_id,
             publishedAfter=last_check_time,
             maxResults=10
         )
+
         response = request.execute()
+        new_videos = []
+
         for item in response.get('items', []):
-            if item['snippet']['type'] == 'upload' and 'upload' in item.get('contentDetails', {}):
-                video_id = item['contentDetails']['upload']['videoId']
-                title = item['snippet']['title']
-                channel_title = item['snippet']['channelTitle']
-                videos.append({
-                    'id': video_id,
-                    'title': title,
-                    'channel': channel_title
-                })
-                print(f"Found new video: {title} ({channel_title})")
+            # Check if this activity is an upload
+            if item['snippet']['type'] == 'upload':
+                if 'upload' in item.get('contentDetails', {}):
+                    video_id = item['contentDetails']['upload']['videoId']
+                    title = item['snippet']['title']
+                    channel_title = item['snippet']['channelTitle']
+                    new_videos.append({
+                        'id': video_id,
+                        'title': title,
+                        'channel': channel_title
+                    })
+                    print(f"Found new video: {title} ({channel_title})")
+
+        return new_videos
+
     except Exception as e:
-        print(f"Error fetching activities for channel {channel_id}: {str(e)}")
-        if "quota" in str(e).lower():
+        error_msg = str(e)
+        print(f"Error fetching activities for channel {channel_id}: {error_msg}")
+
+        # If quota error, signal to stop processing
+        if "quota" in error_msg.lower():
             print("Quota limit reached. Stopping further processing.")
-            return videos
-    return videos
+            return []
 
-def get_new_videos(youtube, channel_ids, last_check_time):
-    """Get new videos from subscribed channels published after the last check time.
+        # For other errors, return None to trigger fallback to search
+        return None
 
-    This implementation is more quota-efficient by:
-    1. Using activities.list instead of search.list when possible
-    2. Batching the channel requests
-    """
-    print(f"Checking for new videos since {last_check_time}...")
-    new_videos = []
+def get_videos_from_search(youtube, channel_id, last_check_time):
+    """Fall back to search API to get videos."""
+    try:
+        print(f"Trying fallback search API for channel {channel_id}...")
+        # Format date correctly for search API
+        formatted_date = last_check_time
+        if '+' in formatted_date:  # Remove any timezone offset if present
+            formatted_date = formatted_date.split('+')[0] + 'Z'
 
-    # Process channels in batches to avoid hitting quota limits too quickly
-    batch_size = 5
-    for i in range(0, len(channel_ids), batch_size):
-        batch_channels = channel_ids[i:i+batch_size]
-        print(f"Processing batch {i//batch_size + 1} of {len(channel_ids)//batch_size + 1} ({len(batch_channels)} channels)")
+        request = youtube.search().list(
+            part="snippet",
+            channelId=channel_id,
+            publishedAfter=formatted_date,
+            maxResults=5,
+            type="video",
+            order="date"
+        )
 
-        for channel_id in batch_channels:
-            try:
-                channel_videos = _get_channel_new_videos(youtube, channel_id, last_check_time)
-                new_videos.extend(channel_videos)
-            except Exception as e:
-                if "quota" in str(e).lower():
-                    return new_videos
+        response = request.execute()
+        new_videos = []
 
-    print(f"Found {len(new_videos)} new videos.")
-    return new_videos
+        for item in response.get('items', []):
+            video_id = item['id']['videoId']
+            title = item['snippet']['title']
+            channel_title = item['snippet']['channelTitle']
+            new_videos.append({
+                'id': video_id,
+                'title': title,
+                'channel': channel_title
+            })
+            print(f"Found new video (via search): {title} ({channel_title})")
+
+        return new_videos
+
+    except Exception as search_error:
+        print(f"Search fallback also failed: {str(search_error)}")
+
+        # If quota error, signal to stop processing
+        if "quota" in str(search_error).lower():
+            print("Quota limit reached in search fallback. Stopping further processing.")
+
+        # Return empty list when all methods fail
+        return []
 
 def create_or_get_custom_watch_later(youtube):
     """Create or get a custom 'Automated Watch Later' playlist.
