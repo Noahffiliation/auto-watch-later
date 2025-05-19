@@ -118,9 +118,123 @@ def save_check_time():
         f.write(current_time)
     return current_time
 
+def parse_iso8601_duration(duration_str):
+    """
+    Parse ISO 8601 duration format (PT1H2M3S) to total seconds.
+
+    Args:
+        duration_str: String in ISO 8601 duration format
+
+    Returns:
+        Total duration in seconds
+    """
+    import re
+
+    time_pattern = re.compile(r'PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?')
+    match = time_pattern.match(duration_str)
+
+    if not match:
+        return 0
+
+    hours = int(match.group(1) or 0)
+    minutes = int(match.group(2) or 0)
+    seconds = int(match.group(3) or 0)
+
+    return hours * 3600 + minutes * 60 + seconds
+
+def has_shorts_hashtag(title):
+    """
+    Check if a video title contains Short hashtags.
+
+    Args:
+        title: Video title string
+
+    Returns:
+        Boolean indicating if title contains Short hashtags
+    """
+    if not title:
+        return False
+
+    short_indicators = ['#short', '#shorts', '#youtubeshorts', '#shortsvideo']
+    return any(indicator.lower() in title.lower() for indicator in short_indicators)
+
+def has_vertical_aspect_ratio(thumbnails):
+    """
+    Check if video has vertical aspect ratio based on thumbnail dimensions.
+
+    Args:
+        thumbnails: Video thumbnails dictionary
+
+    Returns:
+        Boolean indicating if video appears to have vertical orientation
+    """
+    # Check maxres thumbnail first if available
+    for quality in ['maxres', 'high', 'medium', 'default']:
+        if quality in thumbnails:
+            thumbnail = thumbnails[quality]
+            if 'height' in thumbnail and 'width' in thumbnail:
+                return thumbnail['height'] > thumbnail['width']
+
+    # If no suitable thumbnails found, we can't determine
+    return False
+
+def is_youtube_short(youtube, video_id, title=None):
+    """
+    Determine if a video is a YouTube Short using multiple indicators.
+
+    Args:
+        youtube: YouTube API client
+        video_id: ID of the video to check
+        title: Video title (optional, will be fetched if not provided)
+
+    Returns:
+        Boolean indicating whether the video is likely a YouTube Short
+    """
+    try:
+        # Fetch video details
+        video_response = youtube.videos().list(
+            part="contentDetails,snippet",
+            id=video_id
+        ).execute()
+
+        if not video_response.get('items'):
+            return False
+
+        video_details = video_response['items'][0]
+        snippet = video_details['snippet']
+        content_details = video_details['contentDetails']
+
+        # Get title if not provided
+        video_title = title or snippet.get('title', '')
+
+        # Check for Short hashtags in title (strongest indicator)
+        if has_shorts_hashtag(video_title):
+            return True
+
+        # Check duration (Shorts are ≤ 60 seconds)
+        total_seconds = parse_iso8601_duration(content_details.get('duration', ''))
+        if total_seconds > 60:
+            # Definitely not a Short if longer than 60 seconds
+            return False
+
+        # For videos ≤ 60 seconds, check aspect ratio
+        if total_seconds > 0 and total_seconds <= 60:
+            # If it has vertical aspect ratio and short duration, likely a Short
+            if has_vertical_aspect_ratio(snippet.get('thumbnails', {})):
+                return True
+
+        # If we get here, it's not clearly a Short
+        return False
+
+    except Exception as e:
+        print(f"Error checking if video {video_id} is a Short: {str(e)}")
+        # If we can't determine, assume it's not a Short to avoid false positives
+        return False
+
 def get_new_videos(youtube, channel_ids, last_check_time):
     """Get new videos from subscribed channels published after the last check time."""
     print(f"Checking for new videos since {last_check_time}...")
+    print("NOTE: YouTube Shorts will be automatically filtered out.")
     new_videos = []
 
     # Process channels in batches to avoid hitting quota limits too quickly
@@ -138,7 +252,7 @@ def get_new_videos(youtube, channel_ids, last_check_time):
         if not batch_videos and i < len(channel_ids) - batch_size:
             print("No videos found in this batch. Possible quota limitation. Continuing with next batch.")
 
-    print(f"Found {len(new_videos)} new videos.")
+    print(f"Found {len(new_videos)} new videos (excluding Shorts).")
     return new_videos
 
 def process_channel_batch(youtube, channel_ids, last_check_time):
@@ -153,7 +267,6 @@ def process_channel_batch(youtube, channel_ids, last_check_time):
 
 def get_channel_videos(youtube, channel_id, last_check_time):
     """Get new videos from a specific channel."""
-
     # Try using activities endpoint first
     videos_from_activities = get_videos_from_activities(youtube, channel_id, last_check_time)
     if videos_from_activities is not None:
@@ -183,6 +296,12 @@ def get_videos_from_activities(youtube, channel_id, last_check_time):
                     video_id = item['contentDetails']['upload']['videoId']
                     title = item['snippet']['title']
                     channel_title = item['snippet']['channelTitle']
+
+                    # Skip YouTube Shorts
+                    if is_youtube_short(youtube, video_id, title):
+                        print(f"Skipping Short: {title} ({channel_title})")
+                        continue
+
                     new_videos.append({
                         'id': video_id,
                         'title': title,
@@ -229,6 +348,12 @@ def get_videos_from_search(youtube, channel_id, last_check_time):
             video_id = item['id']['videoId']
             title = item['snippet']['title']
             channel_title = item['snippet']['channelTitle']
+
+            # Skip YouTube Shorts
+            if is_youtube_short(youtube, video_id, title):
+                print(f"Skipping Short (via search): {title} ({channel_title})")
+                continue
+
             new_videos.append({
                 'id': video_id,
                 'title': title,
