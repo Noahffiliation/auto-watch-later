@@ -142,140 +142,173 @@ def parse_iso8601_duration(duration_str):
 
     return hours * 3600 + minutes * 60 + seconds
 
-def has_shorts_hashtag(title):
+def get_channel_shorts_playlist_id(channel_id):
     """
-    Check if a video title contains Short hashtags.
+    Convert a channel ID to its corresponding Shorts playlist ID.
 
     Args:
-        title: Video title string
+        channel_id: YouTube channel ID (starts with "UC")
 
     Returns:
-        Boolean indicating if title contains Short hashtags
+        Shorts playlist ID (starts with "UUSH") or None if invalid channel ID
     """
-    if not title:
-        return False
+    if not channel_id or not channel_id.startswith("UC"):
+        return None
 
-    short_indicators = ['#short', '#shorts', '#youtubeshorts', '#shortsvideo']
-    return any(indicator.lower() in title.lower() for indicator in short_indicators)
+    # Replace "UC" with "UUSH" to get the Shorts playlist
+    return "UUSH" + channel_id[2:]
 
-def has_vertical_aspect_ratio(thumbnails):
+def process_playlist_item(item, cutoff_time):
+    """Process a single playlist item and return video ID if it's recent enough."""
+    from datetime import datetime
+    published_at_str = item['snippet']['publishedAt']
+    published_at = datetime.fromisoformat(published_at_str.replace('Z', '+00:00'))
+
+    if published_at > cutoff_time:
+        return item['contentDetails']['videoId']
+    return None
+
+def fetch_playlist_page(youtube, request, cutoff_time, shorts_video_ids, max_results):
+    """Fetch and process a single page of playlist items."""
+    try:
+        if not request:
+            return None
+        response = request.execute()
+        should_continue = False
+
+        for item in response.get('items', []):
+            video_id = process_playlist_item(item, cutoff_time)
+            if video_id:
+                shorts_video_ids.add(video_id)
+                should_continue = True
+            else:
+                return None  # Stop if we hit an old video
+
+        if should_continue and len(shorts_video_ids) < max_results:
+            return youtube.playlistItems().list_next(request, response)
+        return None
+
+    except Exception as e:
+        error_msg = str(e).lower()
+        if "not found" in error_msg or "forbidden" in error_msg:
+            return None
+        print(f"Error fetching playlist page: {str(e)}")
+        return None
+
+def get_channel_shorts_video_ids(youtube, channel_id, published_after, max_results=50):
     """
-    Check if video has vertical aspect ratio based on thumbnail dimensions.
-
-    Args:
-        thumbnails: Video thumbnails dictionary
-
-    Returns:
-        Boolean indicating if video appears to have vertical orientation
-    """
-    # Check maxres thumbnail first if available
-    for quality in ['maxres', 'high', 'medium', 'default']:
-        if quality in thumbnails:
-            thumbnail = thumbnails[quality]
-            if 'height' in thumbnail and 'width' in thumbnail:
-                return thumbnail['height'] > thumbnail['width']
-
-    # If no suitable thumbnails found, we can't determine
-    return False
-
-def is_youtube_short(youtube, video_id, title=None):
-    """
-    Determine if a video is a YouTube Short using multiple indicators.
+    Get video IDs from a channel's Shorts playlist published after a certain time.
 
     Args:
         youtube: YouTube API client
-        video_id: ID of the video to check
-        title: Video title (optional, will be fetched if not provided)
+        channel_id: Channel ID to check
+        published_after: ISO 8601 timestamp to filter videos after
+        max_results: Maximum number of Shorts to retrieve
 
     Returns:
-        Boolean indicating whether the video is likely a YouTube Short
+        Set of video IDs that are Shorts published after the given time
     """
+    shorts_playlist_id = get_channel_shorts_playlist_id(channel_id)
+    if not shorts_playlist_id:
+        return set()
+
     try:
-        # Fetch video details
-        video_response = youtube.videos().list(
+        from datetime import datetime
+        shorts_video_ids = set()
+        cutoff_time = datetime.fromisoformat(published_after.replace('Z', '+00:00'))
+
+        request = youtube.playlistItems().list(
             part="contentDetails,snippet",
-            id=video_id
-        ).execute()
+            playlistId=shorts_playlist_id,
+            maxResults=min(max_results, 50)
+        )
 
-        if not video_response.get('items'):
-            return False
+        while request and len(shorts_video_ids) < max_results:
+            request = fetch_playlist_page(youtube, request, cutoff_time, shorts_video_ids, max_results)
 
-        video_details = video_response['items'][0]
-        snippet = video_details['snippet']
-        content_details = video_details['contentDetails']
+        return shorts_video_ids
 
-        # Get title if not provided
-        video_title = title or snippet.get('title', '')
+    except Exception:
+        return set()
 
-        # Check for Short hashtags in title (strongest indicator)
-        if has_shorts_hashtag(video_title):
-            return True
+def build_shorts_cache_for_channels(youtube, channel_ids, published_after, max_shorts_per_channel=20):
+    """
+    Build a cache of Shorts video IDs published after a certain time for the given channels.
 
-        # Check duration (Shorts are ≤ 60 seconds)
-        total_seconds = parse_iso8601_duration(content_details.get('duration', ''))
-        if total_seconds > 60:
-            # Definitely not a Short if longer than 60 seconds
-            return False
+    Args:
+        youtube: YouTube API client
+        channel_ids: List of channel IDs to check
+        published_after: ISO 8601 timestamp to filter Shorts after
+        max_shorts_per_channel: Max recent Shorts to cache per channel
 
-        # For videos ≤ 60 seconds, check aspect ratio
-        if total_seconds > 0 and total_seconds <= 60:
-            # If it has vertical aspect ratio and short duration, likely a Short
-            if has_vertical_aspect_ratio(snippet.get('thumbnails', {})):
-                return True
+    Returns:
+        Set of recent Shorts video IDs across all channels
+    """
+    print(f"Building cache of recent YouTube Shorts (since {published_after})...")
+    all_shorts = set()
+    channels_with_shorts = 0
 
-        # If we get here, it's not clearly a Short
-        return False
+    for i, channel_id in enumerate(channel_ids):
+        if i % 10 == 0:  # Progress update every 10 channels
+            print(f"Processing channel {i+1}/{len(channel_ids)} for recent Shorts...")
 
-    except Exception as e:
-        print(f"Error checking if video {video_id} is a Short: {str(e)}")
-        # If we can't determine, assume it's not a Short to avoid false positives
-        return False
+        try:
+            channel_shorts = get_channel_shorts_video_ids(youtube, channel_id, published_after, max_shorts_per_channel)
+            if channel_shorts:
+                all_shorts.update(channel_shorts)
+                channels_with_shorts += 1
 
-def get_new_videos(youtube, channel_ids, last_check_time):
-    """Get new videos from subscribed channels published after the last check time."""
-    print(f"Checking for new videos since {last_check_time}...")
-    print("NOTE: YouTube Shorts will be automatically filtered out.")
-    new_videos = []
+        except Exception:
+            # Continue processing other channels if one fails
+            continue
 
-    # Process channels in batches to avoid hitting quota limits too quickly
-    batch_size = 5
-    total_batches = len(channel_ids) // batch_size + (1 if len(channel_ids) % batch_size > 0 else 0)
+    print(f"Recent Shorts cache built: {len(all_shorts)} Shorts from {channels_with_shorts} channels")
+    return all_shorts
 
-    for i in range(0, len(channel_ids), batch_size):
-        batch_channels = channel_ids[i:i+batch_size]
-        print(f"Processing batch {i//batch_size + 1} of {total_batches} ({len(batch_channels)} channels)")
+def is_youtube_short_efficient(video_id, shorts_cache):
+    """
+    Efficiently check if a video is a YouTube Short using pre-built cache.
 
-        batch_videos = process_channel_batch(youtube, batch_channels, last_check_time)
-        new_videos.extend(batch_videos)
+    Args:
+        video_id: ID of the video to check
+        shorts_cache: Set of known Shorts video IDs
 
-        # If we got an empty list but should have videos, we might have hit quota limits
-        if not batch_videos and i < len(channel_ids) - batch_size:
-            print("No videos found in this batch. Possible quota limitation. Continuing with next batch.")
+    Returns:
+        Boolean indicating whether the video is a YouTube Short
+    """
+    return video_id in shorts_cache
 
-    print(f"Found {len(new_videos)} new videos (excluding Shorts).")
-    return new_videos
+def filter_out_shorts(video_list, shorts_cache, context=""):
+    """
+    Filter YouTube Shorts from a list of videos using the cache.
 
-def process_channel_batch(youtube, channel_ids, last_check_time):
-    """Process a batch of channels to find new videos."""
-    new_videos = []
+    Args:
+        video_list: List of video dictionaries with 'id', 'title', 'channel'
+        shorts_cache: Set of known Shorts video IDs
+        context: Context string for logging
 
-    for channel_id in channel_ids:
-        channel_videos = get_channel_videos(youtube, channel_id, last_check_time)
-        new_videos.extend(channel_videos)
+    Returns:
+        List of videos with Shorts removed
+    """
+    filtered_videos = []
+    shorts_count = 0
 
-    return new_videos
+    for video in video_list:
+        video_id = video['id']
 
-def get_channel_videos(youtube, channel_id, last_check_time):
-    """Get new videos from a specific channel."""
-    # Try using activities endpoint first
-    videos_from_activities = get_videos_from_activities(youtube, channel_id, last_check_time)
-    if videos_from_activities is not None:
-        return videos_from_activities
+        if is_youtube_short_efficient(video_id, shorts_cache):
+            print(f"Skipping Short ({context}): {video['title']} ({video['channel']})")
+            shorts_count += 1
+        else:
+            filtered_videos.append(video)
+            print(f"Found new video ({context}): {video['title']} ({video['channel']})")
 
-    # Fall back to search API if activities endpoint fails
-    return get_videos_from_search(youtube, channel_id, last_check_time)
+    if shorts_count > 0:
+        print(f"Filtered out {shorts_count} Shorts from {context} results")
 
-def get_videos_from_activities(youtube, channel_id, last_check_time):
+    return filtered_videos
+
+def get_videos_from_activities(youtube, channel_id, last_check_time, shorts_cache):
     """Try to get videos using the activities endpoint."""
     try:
         # Activities endpoint only costs 1 unit per request
@@ -287,7 +320,7 @@ def get_videos_from_activities(youtube, channel_id, last_check_time):
         )
 
         response = request.execute()
-        new_videos = []
+        candidate_videos = []
 
         for item in response.get('items', []):
             # Check if this activity is an upload
@@ -297,19 +330,14 @@ def get_videos_from_activities(youtube, channel_id, last_check_time):
                     title = item['snippet']['title']
                     channel_title = item['snippet']['channelTitle']
 
-                    # Skip YouTube Shorts
-                    if is_youtube_short(youtube, video_id, title):
-                        print(f"Skipping Short: {title} ({channel_title})")
-                        continue
-
-                    new_videos.append({
+                    candidate_videos.append({
                         'id': video_id,
                         'title': title,
                         'channel': channel_title
                     })
-                    print(f"Found new video: {title} ({channel_title})")
 
-        return new_videos
+        # Filter out Shorts using the cache
+        return filter_out_shorts(candidate_videos, shorts_cache, "activities")
 
     except Exception as e:
         error_msg = str(e)
@@ -323,7 +351,7 @@ def get_videos_from_activities(youtube, channel_id, last_check_time):
         # For other errors, return None to trigger fallback to search
         return None
 
-def get_videos_from_search(youtube, channel_id, last_check_time):
+def get_videos_from_search(youtube, channel_id, last_check_time, shorts_cache):
     """Fall back to search API to get videos."""
     try:
         print(f"Trying fallback search API for channel {channel_id}...")
@@ -342,26 +370,21 @@ def get_videos_from_search(youtube, channel_id, last_check_time):
         )
 
         response = request.execute()
-        new_videos = []
+        candidate_videos = []
 
         for item in response.get('items', []):
             video_id = item['id']['videoId']
             title = item['snippet']['title']
             channel_title = item['snippet']['channelTitle']
 
-            # Skip YouTube Shorts
-            if is_youtube_short(youtube, video_id, title):
-                print(f"Skipping Short (via search): {title} ({channel_title})")
-                continue
-
-            new_videos.append({
+            candidate_videos.append({
                 'id': video_id,
                 'title': title,
                 'channel': channel_title
             })
-            print(f"Found new video (via search): {title} ({channel_title})")
 
-        return new_videos
+        # Filter out Shorts using the cache
+        return filter_out_shorts(candidate_videos, shorts_cache, "search")
 
     except Exception as search_error:
         print(f"Search fallback also failed: {str(search_error)}")
@@ -372,6 +395,54 @@ def get_videos_from_search(youtube, channel_id, last_check_time):
 
         # Return empty list when all methods fail
         return []
+
+def get_new_videos_with_shorts_filtering(youtube, channel_ids, last_check_time):
+    """Get new videos from subscribed channels with efficient Shorts filtering."""
+    print(f"Checking for new videos since {last_check_time}...")
+
+    # First, build a cache of recent Shorts from subscribed channels
+    shorts_cache = build_shorts_cache_for_channels(youtube, channel_ids, last_check_time)
+
+    print("NOTE: YouTube Shorts will be automatically filtered out using playlist detection.")
+    new_videos = []
+
+    # Process channels in batches to avoid hitting quota limits too quickly
+    batch_size = 5
+    total_batches = len(channel_ids) // batch_size + (1 if len(channel_ids) % batch_size > 0 else 0)
+
+    for i in range(0, len(channel_ids), batch_size):
+        batch_channels = channel_ids[i:i+batch_size]
+        print(f"Processing batch {i//batch_size + 1} of {total_batches} ({len(batch_channels)} channels)")
+
+        batch_videos = process_channel_batch(youtube, batch_channels, last_check_time, shorts_cache)
+        new_videos.extend(batch_videos)
+
+        # If we got an empty list but should have videos, we might have hit quota limits
+        if not batch_videos and i < len(channel_ids) - batch_size:
+            print("No videos found in this batch. Possible quota limitation. Continuing with next batch.")
+
+    print(f"Found {len(new_videos)} new videos (excluding Shorts).")
+    return new_videos
+
+def process_channel_batch(youtube, channel_ids, last_check_time, shorts_cache):
+    """Process a batch of channels to find new videos."""
+    new_videos = []
+
+    for channel_id in channel_ids:
+        channel_videos = get_channel_videos(youtube, channel_id, last_check_time, shorts_cache)
+        new_videos.extend(channel_videos)
+
+    return new_videos
+
+def get_channel_videos(youtube, channel_id, last_check_time, shorts_cache):
+    """Get new videos from a specific channel."""
+    # Try using activities endpoint first
+    videos_from_activities = get_videos_from_activities(youtube, channel_id, last_check_time, shorts_cache)
+    if videos_from_activities is not None:
+        return videos_from_activities
+
+    # Fall back to search API if activities endpoint fails
+    return get_videos_from_search(youtube, channel_id, last_check_time, shorts_cache)
 
 def create_or_get_custom_watch_later(youtube):
     """Create or get a custom 'Automated Watch Later' playlist.
@@ -518,7 +589,7 @@ def main():
         last_check_time = get_last_check_time()
 
         # Get new videos
-        new_videos = get_new_videos(youtube, channel_ids, last_check_time)
+        new_videos = get_new_videos_with_shorts_filtering(youtube, channel_ids, last_check_time)
 
         if new_videos:
             # Print new videos found
