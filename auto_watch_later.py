@@ -27,6 +27,7 @@ import sys
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
+from google.auth.exceptions import RefreshError
 
 # If modifying these SCOPES, delete the file token.pickle.
 SCOPES = [
@@ -38,40 +39,62 @@ SCOPES = [
 # File to store the last check time
 LAST_CHECK_FILE = 'last_check_time.txt'
 
-def get_authenticated_service():
-    """Get authenticated YouTube API service."""
-    credentials = None
-
-    # Token pickle stores the user's credentials from previously successful logins
-    token_file = 'token.pickle'
+def load_credentials(token_file):
+    """Load credentials from token file if it exists."""
     if os.path.exists(token_file):
         print("Loading saved credentials...")
         with open(token_file, 'rb') as token:
-            credentials = pickle.load(token)
+            return pickle.load(token)
+    return None
 
-    # If there are no valid credentials available, let the user log in
+def handle_refresh_error(token_file):
+    """Handle token refresh error by removing the invalid token file."""
+    if os.path.exists(token_file):
+        os.remove(token_file)
+        print("Deleted invalid token file.")
+    return None
+
+def get_new_credentials():
+    """Get new credentials using client secrets file."""
+    try:
+        flow = InstalledAppFlow.from_client_secrets_file(
+            'client_secrets.json', SCOPES)
+        return flow.run_local_server(port=0)
+    except FileNotFoundError:
+        print("ERROR: You need to download the 'client_secrets.json' file from Google Cloud Console.")
+        print("1. Go to https://console.cloud.google.com/")
+        print("2. Create a project and enable YouTube Data API v3")
+        print("3. Create OAuth 2.0 credentials (Desktop application)")
+        print("4. Download the JSON file and rename it to 'client_secrets.json'")
+        print("5. Place it in the same directory as this script")
+        sys.exit(1)
+
+def save_credentials(credentials, token_file):
+    """Save credentials to token file."""
+    with open(token_file, 'wb') as token:
+        pickle.dump(credentials, token)
+        print("Saved new credentials.")
+
+def get_authenticated_service():
+    """Get authenticated YouTube API service."""
+    token_file = 'token.pickle'
+    credentials = load_credentials(token_file)
+
     if not credentials or not credentials.valid:
         if credentials and credentials.expired and credentials.refresh_token:
             print("Refreshing credentials...")
-            credentials.refresh(Request())
-        else:
-            print("Getting new credentials...")
             try:
-                flow = InstalledAppFlow.from_client_secrets_file(
-                    'client_secrets.json', SCOPES)
-                credentials = flow.run_local_server(port=0)
-            except FileNotFoundError:
-                print("ERROR: You need to download the 'client_secrets.json' file from Google Cloud Console.")
-                print("1. Go to https://console.cloud.google.com/")
-                print("2. Create a project and enable YouTube Data API v3")
-                print("3. Create OAuth 2.0 credentials (Desktop application)")
-                print("4. Download the JSON file and rename it to 'client_secrets.json'")
-                print("5. Place it in the same directory as this script")
-                sys.exit(1)
+                credentials.refresh(Request())
+            except RefreshError as e:
+                print(f"Token refresh failed: {e}")
+                print("The stored token has expired or been revoked.")
+                print("Deleting the token file and requesting new authentication...")
+                credentials = handle_refresh_error(token_file)
 
-        # Save the credentials for the next run
-        with open(token_file, 'wb') as token:
-            pickle.dump(credentials, token)
+        if not credentials or not credentials.valid:
+            print("Getting new credentials...")
+            credentials = get_new_credentials()
+            save_credentials(credentials, token_file)
 
     return build('youtube', 'v3', credentials=credentials)
 
