@@ -301,9 +301,22 @@ def is_youtube_short_efficient(video_id, shorts_cache):
     """
     return video_id in shorts_cache
 
-def filter_out_shorts(video_list, shorts_cache, context=""):
+def is_teaser_or_trailer(video_title):
     """
-    Filter YouTube Shorts from a list of videos using the cache.
+    Check if a video title contains 'teaser' or 'trailer' keywords.
+
+    Args:
+        video_title: The title of the video to check
+
+    Returns:
+        Boolean indicating whether the video is a teaser or trailer
+    """
+    title_lower = video_title.lower()
+    return 'teaser' in title_lower or 'trailer' in title_lower
+
+def filter_out_shorts_and_teasers(video_list, shorts_cache, context=""):
+    """
+    Filter YouTube Shorts, teasers, and trailers from a list of videos using the cache.
 
     Args:
         video_list: List of video dictionaries with 'id', 'title', 'channel'
@@ -311,23 +324,31 @@ def filter_out_shorts(video_list, shorts_cache, context=""):
         context: Context string for logging
 
     Returns:
-        List of videos with Shorts removed
+        List of videos with Shorts, teasers, and trailers removed
     """
     filtered_videos = []
     shorts_count = 0
+    teaser_trailer_count = 0
 
     for video in video_list:
         video_id = video['id']
+        video_title = video['title']
 
         if is_youtube_short_efficient(video_id, shorts_cache):
-            print(f"Skipping Short ({context}): {video['title']} ({video['channel']})")
+            print(f"Skipping Short ({context}): {video_title} ({video['channel']})")
             shorts_count += 1
+        elif is_teaser_or_trailer(video_title):
+            print(f"Skipping teaser/trailer ({context}): {video_title} ({video['channel']})")
+            teaser_trailer_count += 1
         else:
             filtered_videos.append(video)
-            print(f"Found new video ({context}): {video['title']} ({video['channel']})")
+            print(f"Found new video ({context}): {video_title} ({video['channel']})")
 
     if shorts_count > 0:
         print(f"Filtered out {shorts_count} Shorts from {context} results")
+
+    if teaser_trailer_count > 0:
+        print(f"Filtered out {teaser_trailer_count} teasers/trailers from {context} results")
 
     return filtered_videos
 
@@ -360,7 +381,7 @@ def get_videos_from_activities(youtube, channel_id, last_check_time, shorts_cach
                     })
 
         # Filter out Shorts using the cache
-        return filter_out_shorts(candidate_videos, shorts_cache, "activities")
+        return filter_out_shorts_and_teasers(candidate_videos, shorts_cache, "activities")
 
     except Exception as e:
         error_msg = str(e)
@@ -407,7 +428,7 @@ def get_videos_from_search(youtube, channel_id, last_check_time, shorts_cache):
             })
 
         # Filter out Shorts using the cache
-        return filter_out_shorts(candidate_videos, shorts_cache, "search")
+        return filter_out_shorts_and_teasers(candidate_videos, shorts_cache, "search")
 
     except Exception as search_error:
         print(f"Search fallback also failed: {str(search_error)}")
@@ -426,7 +447,7 @@ def get_new_videos_with_shorts_filtering(youtube, channel_ids, last_check_time):
     # First, build a cache of recent Shorts from subscribed channels
     shorts_cache = build_shorts_cache_for_channels(youtube, channel_ids, last_check_time)
 
-    print("NOTE: YouTube Shorts will be automatically filtered out using playlist detection.")
+    print("NOTE: YouTube Shorts, teasers, and trailers will be automatically filtered out.")
     new_videos = []
 
     # Process channels in batches to avoid hitting quota limits too quickly
@@ -444,7 +465,7 @@ def get_new_videos_with_shorts_filtering(youtube, channel_ids, last_check_time):
         if not batch_videos and i < len(channel_ids) - batch_size:
             print("No videos found in this batch. Possible quota limitation. Continuing with next batch.")
 
-    print(f"Found {len(new_videos)} new videos (excluding Shorts).")
+    print(f"Found {len(new_videos)} new videos (excluding Shorts, teasers, and trailers).")
     return new_videos
 
 def process_channel_batch(youtube, channel_ids, last_check_time, shorts_cache):

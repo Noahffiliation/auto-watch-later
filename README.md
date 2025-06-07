@@ -13,7 +13,7 @@ I watch YouTube on almost a daily basis, so I wanted a way to automatically add 
 1. Since I have about 200 subscriptions, I get a lot of video notifications on my phone, and Android will start removing older notifications from the same app once you get too many, and I'd rather not miss any videos.
 2. The "Add to Watch Later" notification action doesn't work on mobile data unless the YouTube app is open, which is really annoying.
 
-The drawback is I'm getting every single video/short/livestream from all my subscriptions, whereas I used to be able to filter out anything I'm not interested in based on title/thumbnail/type. I don't mind clearing out videos from the playlist as I'm watching videos, I'll occasionally skip over a video anyways if I don't want to watch it, so I'll take this over missing videos.
+The drawback is I'm getting every single video/livestream from all my subscriptions, whereas I used to be able to filter out anything I'm not interested in based on title/thumbnail/type. I don't mind clearing out videos from the playlist as I'm watching videos, I'll occasionally skip over a video anyways if I don't want to watch it, so I'll take this over missing videos.
 
 ### Note <a name = "note"></a>
 I whipped this up by [vibe-coding](https://en.wikipedia.org/wiki/Vibe_coding) in [Claude](https://claude.ai/). I've heard anecdotally that Claude tends to do better at coding tasks than other LLMs, so this project was a way to see if that's true.
