@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-YouTube Subscription Auto-Adder
+YouTube Subscription Auto-Adder with Logging
 
 This script automatically finds new videos from your YouTube subscriptions
 and adds them to a custom "Automated Watch Later" playlist.
@@ -39,10 +39,51 @@ SCOPES = [
 # File to store the last check time
 LAST_CHECK_FILE = 'last_check_time.txt'
 
+# Global log file handle
+log_file = None
+
+def setup_logging():
+    """Setup logging to file in log folder."""
+    global log_file
+
+    # Create log folder if it doesn't exist
+    log_folder = 'log'
+    if not os.path.exists(log_folder):
+        os.makedirs(log_folder)
+
+    # Create log filename with current date and time
+    current_time = datetime.datetime.now()
+    log_filename = current_time.strftime("%Y-%m-%d_%H-%M-%S.txt")
+    log_path = os.path.join(log_folder, log_filename)
+
+    # Open log file for writing
+    log_file = open(log_path, 'w', encoding='utf-8')
+
+    # Write header to log file
+    log_file.write(f"YouTube Auto-Adder Log - {current_time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+    log_file.write("=" * 50 + "\n\n")
+    log_file.flush()
+
+    return log_path
+
+def log_print(message):
+    """Print message to console and write to log file."""
+    global log_file
+    print(message)
+    if log_file:
+        log_file.write(message + "\n")
+        log_file.flush()
+
+def cleanup_logging():
+    """Close log file."""
+    global log_file
+    if log_file:
+        log_file.close()
+
 def load_credentials(token_file):
     """Load credentials from token file if it exists."""
     if os.path.exists(token_file):
-        print("Loading saved credentials...")
+        log_print("Loading saved credentials...")
         with open(token_file, 'rb') as token:
             return pickle.load(token)
     return None
@@ -51,7 +92,7 @@ def handle_refresh_error(token_file):
     """Handle token refresh error by removing the invalid token file."""
     if os.path.exists(token_file):
         os.remove(token_file)
-        print("Deleted invalid token file.")
+        log_print("Deleted invalid token file.")
     return None
 
 def get_new_credentials():
@@ -61,19 +102,19 @@ def get_new_credentials():
             'client_secrets.json', SCOPES)
         return flow.run_local_server(port=0)
     except FileNotFoundError:
-        print("ERROR: You need to download the 'client_secrets.json' file from Google Cloud Console.")
-        print("1. Go to https://console.cloud.google.com/")
-        print("2. Create a project and enable YouTube Data API v3")
-        print("3. Create OAuth 2.0 credentials (Desktop application)")
-        print("4. Download the JSON file and rename it to 'client_secrets.json'")
-        print("5. Place it in the same directory as this script")
+        log_print("ERROR: You need to download the 'client_secrets.json' file from Google Cloud Console.")
+        log_print("1. Go to https://console.cloud.google.com/")
+        log_print("2. Create a project and enable YouTube Data API v3")
+        log_print("3. Create OAuth 2.0 credentials (Desktop application)")
+        log_print("4. Download the JSON file and rename it to 'client_secrets.json'")
+        log_print("5. Place it in the same directory as this script")
         sys.exit(1)
 
 def save_credentials(credentials, token_file):
     """Save credentials to token file."""
     with open(token_file, 'wb') as token:
         pickle.dump(credentials, token)
-        print("Saved new credentials.")
+        log_print("Saved new credentials.")
 
 def get_authenticated_service():
     """Get authenticated YouTube API service."""
@@ -82,17 +123,17 @@ def get_authenticated_service():
 
     if not credentials or not credentials.valid:
         if credentials and credentials.expired and credentials.refresh_token:
-            print("Refreshing credentials...")
+            log_print("Refreshing credentials...")
             try:
                 credentials.refresh(Request())
             except RefreshError as e:
-                print(f"Token refresh failed: {e}")
-                print("The stored token has expired or been revoked.")
-                print("Deleting the token file and requesting new authentication...")
+                log_print(f"Token refresh failed: {e}")
+                log_print("The stored token has expired or been revoked.")
+                log_print("Deleting the token file and requesting new authentication...")
                 credentials = handle_refresh_error(token_file)
 
         if not credentials or not credentials.valid:
-            print("Getting new credentials...")
+            log_print("Getting new credentials...")
             credentials = get_new_credentials()
             save_credentials(credentials, token_file)
 
@@ -100,7 +141,7 @@ def get_authenticated_service():
 
 def get_subscriptions(youtube):
     """Get list of channel IDs that the user is subscribed to."""
-    print("Fetching your subscriptions...")
+    log_print("Fetching your subscriptions...")
 
     channel_ids = []
     request = youtube.subscriptions().list(
@@ -119,7 +160,7 @@ def get_subscriptions(youtube):
         # Get the next page of results
         request = youtube.subscriptions().list_next(request, response)
 
-    print(f"Found {len(channel_ids)} subscriptions.")
+    log_print(f"Found {len(channel_ids)} subscriptions.")
     return channel_ids
 
 def get_last_check_time():
@@ -215,7 +256,7 @@ def fetch_playlist_page(youtube, request, cutoff_time, shorts_video_ids, max_res
         error_msg = str(e).lower()
         if "not found" in error_msg or "forbidden" in error_msg:
             return None
-        print(f"Error fetching playlist page: {str(e)}")
+        log_print(f"Error fetching playlist page: {str(e)}")
         return None
 
 def get_channel_shorts_video_ids(youtube, channel_id, published_after, max_results=50):
@@ -267,13 +308,13 @@ def build_shorts_cache_for_channels(youtube, channel_ids, published_after, max_s
     Returns:
         Set of recent Shorts video IDs across all channels
     """
-    print(f"Building cache of recent YouTube Shorts (since {published_after})...")
+    log_print(f"Building cache of recent YouTube Shorts (since {published_after})...")
     all_shorts = set()
     channels_with_shorts = 0
 
     for i, channel_id in enumerate(channel_ids):
         if i % 10 == 0:  # Progress update every 10 channels
-            print(f"Processing channel {i+1}/{len(channel_ids)} for recent Shorts...")
+            log_print(f"Processing channel {i+1}/{len(channel_ids)} for recent Shorts...")
 
         try:
             channel_shorts = get_channel_shorts_video_ids(youtube, channel_id, published_after, max_shorts_per_channel)
@@ -285,7 +326,7 @@ def build_shorts_cache_for_channels(youtube, channel_ids, published_after, max_s
             # Continue processing other channels if one fails
             continue
 
-    print(f"Recent Shorts cache built: {len(all_shorts)} Shorts from {channels_with_shorts} channels")
+    log_print(f"Recent Shorts cache built: {len(all_shorts)} Shorts from {channels_with_shorts} channels")
     return all_shorts
 
 def is_youtube_short_efficient(video_id, shorts_cache):
@@ -335,20 +376,20 @@ def filter_out_shorts_and_teasers(video_list, shorts_cache, context=""):
         video_title = video['title']
 
         if is_youtube_short_efficient(video_id, shorts_cache):
-            print(f"Skipping Short ({context}): {video_title} ({video['channel']})")
+            log_print(f"Skipping Short ({context}): {video_title} ({video['channel']})")
             shorts_count += 1
         elif is_teaser_or_trailer(video_title):
-            print(f"Skipping teaser/trailer ({context}): {video_title} ({video['channel']})")
+            log_print(f"Skipping teaser/trailer ({context}): {video_title} ({video['channel']})")
             teaser_trailer_count += 1
         else:
             filtered_videos.append(video)
-            print(f"Found new video ({context}): {video_title} ({video['channel']})")
+            log_print(f"Found new video ({context}): {video_title} ({video['channel']})")
 
     if shorts_count > 0:
-        print(f"Filtered out {shorts_count} Shorts from {context} results")
+        log_print(f"Filtered out {shorts_count} Shorts from {context} results")
 
     if teaser_trailer_count > 0:
-        print(f"Filtered out {teaser_trailer_count} teasers/trailers from {context} results")
+        log_print(f"Filtered out {teaser_trailer_count} teasers/trailers from {context} results")
 
     return filtered_videos
 
@@ -385,11 +426,11 @@ def get_videos_from_activities(youtube, channel_id, last_check_time, shorts_cach
 
     except Exception as e:
         error_msg = str(e)
-        print(f"Error fetching activities for channel {channel_id}: {error_msg}")
+        log_print(f"Error fetching activities for channel {channel_id}: {error_msg}")
 
         # If quota error, signal to stop processing
         if "quota" in error_msg.lower():
-            print("Quota limit reached. Stopping further processing.")
+            log_print("Quota limit reached. Stopping further processing.")
             return []
 
         # For other errors, return None to trigger fallback to search
@@ -398,7 +439,7 @@ def get_videos_from_activities(youtube, channel_id, last_check_time, shorts_cach
 def get_videos_from_search(youtube, channel_id, last_check_time, shorts_cache):
     """Fall back to search API to get videos."""
     try:
-        print(f"Trying fallback search API for channel {channel_id}...")
+        log_print(f"Trying fallback search API for channel {channel_id}...")
         # Format date correctly for search API
         formatted_date = last_check_time
         if '+' in formatted_date:  # Remove any timezone offset if present
@@ -431,23 +472,23 @@ def get_videos_from_search(youtube, channel_id, last_check_time, shorts_cache):
         return filter_out_shorts_and_teasers(candidate_videos, shorts_cache, "search")
 
     except Exception as search_error:
-        print(f"Search fallback also failed: {str(search_error)}")
+        log_print(f"Search fallback also failed: {str(search_error)}")
 
         # If quota error, signal to stop processing
         if "quota" in str(search_error).lower():
-            print("Quota limit reached in search fallback. Stopping further processing.")
+            log_print("Quota limit reached in search fallback. Stopping further processing.")
 
         # Return empty list when all methods fail
         return []
 
 def get_new_videos_with_shorts_filtering(youtube, channel_ids, last_check_time):
     """Get new videos from subscribed channels with efficient Shorts filtering."""
-    print(f"Checking for new videos since {last_check_time}...")
+    log_print(f"Checking for new videos since {last_check_time}...")
 
     # First, build a cache of recent Shorts from subscribed channels
     shorts_cache = build_shorts_cache_for_channels(youtube, channel_ids, last_check_time)
 
-    print("NOTE: YouTube Shorts, teasers, and trailers will be automatically filtered out.")
+    log_print("NOTE: YouTube Shorts, teasers, and trailers will be automatically filtered out.")
     new_videos = []
 
     # Process channels in batches to avoid hitting quota limits too quickly
@@ -456,16 +497,16 @@ def get_new_videos_with_shorts_filtering(youtube, channel_ids, last_check_time):
 
     for i in range(0, len(channel_ids), batch_size):
         batch_channels = channel_ids[i:i+batch_size]
-        print(f"Processing batch {i//batch_size + 1} of {total_batches} ({len(batch_channels)} channels)")
+        log_print(f"Processing batch {i//batch_size + 1} of {total_batches} ({len(batch_channels)} channels)")
 
         batch_videos = process_channel_batch(youtube, batch_channels, last_check_time, shorts_cache)
         new_videos.extend(batch_videos)
 
         # If we got an empty list but should have videos, we might have hit quota limits
         if not batch_videos and i < len(channel_ids) - batch_size:
-            print("No videos found in this batch. Possible quota limitation. Continuing with next batch.")
+            log_print("No videos found in this batch. Possible quota limitation. Continuing with next batch.")
 
-    print(f"Found {len(new_videos)} new videos (excluding Shorts, teasers, and trailers).")
+    log_print(f"Found {len(new_videos)} new videos (excluding Shorts, teasers, and trailers).")
     return new_videos
 
 def process_channel_batch(youtube, channel_ids, last_check_time, shorts_cache):
@@ -510,14 +551,14 @@ def create_or_get_custom_watch_later(youtube):
         # Check if our custom playlist already exists
         for playlist in response['items']:
             if playlist['snippet']['title'] == custom_playlist_name:
-                print(f"Found existing '{custom_playlist_name}' playlist with ID: {playlist['id']}")
+                log_print(f"Found existing '{custom_playlist_name}' playlist with ID: {playlist['id']}")
                 return playlist['id']
 
         # Get the next page of results
         request = youtube.playlists().list_next(request, response)
 
     # If we're here, the playlist doesn't exist yet - create it
-    print(f"Creating new '{custom_playlist_name}' playlist...")
+    log_print(f"Creating new '{custom_playlist_name}' playlist...")
 
     result = youtube.playlists().insert(
         part="snippet,status",
@@ -532,12 +573,12 @@ def create_or_get_custom_watch_later(youtube):
         }
     ).execute()
 
-    print(f"Created new playlist with ID: {result['id']}")
+    log_print(f"Created new playlist with ID: {result['id']}")
     return result['id']
 
 def add_to_watch_later(youtube, video_ids, playlist_id):
     """Add videos to the specified playlist."""
-    print(f"Adding {len(video_ids)} videos to playlist...")
+    log_print(f"Adding {len(video_ids)} videos to playlist...")
 
     added_count = 0
     already_in_playlist_count = 0
@@ -554,7 +595,7 @@ def add_to_watch_later(youtube, video_ids, playlist_id):
             response = request.execute()
 
             if response.get('items'):
-                print(f"Video {video_id} is already in the playlist. Skipping.")
+                log_print(f"Video {video_id} is already in the playlist. Skipping.")
                 already_in_playlist_count += 1
                 continue
 
@@ -573,23 +614,23 @@ def add_to_watch_later(youtube, video_ids, playlist_id):
             ).execute()
 
             added_count += 1
-            print(f"Added: {video_id}")
+            log_print(f"Added: {video_id}")
 
             # Add a small delay to avoid rate limiting
             time.sleep(0.5)
 
         except Exception as e:
             # Print a more detailed error message
-            print(f"Failed to add video {video_id}: {str(e)}")
+            log_print(f"Failed to add video {video_id}: {str(e)}")
             if "quotaExceeded" in str(e):
-                print("API quota exceeded. Try again tomorrow or request higher quota limits.")
+                log_print("API quota exceeded. Try again tomorrow or request higher quota limits.")
                 break
             elif "videoNotFound" in str(e) or "notFound" in str(e):
-                print("Video may have been removed or is not accessible.")
+                log_print("Video may have been removed or is not accessible.")
             elif "playlistForbidden" in str(e) or "forbidden" in str(e).lower():
-                print("Access to playlist is restricted. Make sure you've granted the proper permissions.")
+                log_print("Access to playlist is restricted. Make sure you've granted the proper permissions.")
 
-    print(f"Summary: Added {added_count} videos, {already_in_playlist_count} were already in the playlist.")
+    log_print(f"Summary: Added {added_count} videos, {already_in_playlist_count} were already in the playlist.")
     return added_count
 
 def check_quota_usage(youtube):
@@ -600,74 +641,83 @@ def check_quota_usage(youtube):
             part="id",
             mine=True
         ).execute()
-        print("YouTube API quota is available.")
+        log_print("YouTube API quota is available.")
         return True
     except Exception as e:
         if "quota" in str(e).lower():
-            print("YouTube API quota has been exceeded for today.")
-            print("The quota resets at midnight Pacific Time.")
+            log_print("YouTube API quota has been exceeded for today.")
+            log_print("The quota resets at midnight Pacific Time.")
             return False
         else:
-            print(f"Error checking quota: {str(e)}")
+            log_print(f"Error checking quota: {str(e)}")
             return True  # Assume quota is available if error is not quota-related
 
 def main():
-    # Get authenticated YouTube API service
-    youtube = get_authenticated_service()
-
-    # Check quota status
-    quota_available = check_quota_usage(youtube)
-    if not quota_available:
-        print("Quota exceeded. Cannot proceed.")
-        return
-
-    # Create or get custom playlist for automated watch later
-    playlist_id = create_or_get_custom_watch_later(youtube)
-    print(f"Using custom playlist ID: {playlist_id}")
+    # Setup logging
+    log_path = setup_logging()
+    log_print(f"Log file created: {log_path}")
 
     try:
-        # Get subscribed channels
-        channel_ids = get_subscriptions(youtube)
+        # Get authenticated YouTube API service
+        youtube = get_authenticated_service()
 
-        # Get the last check time
-        last_check_time = get_last_check_time()
+        # Check quota status
+        quota_available = check_quota_usage(youtube)
+        if not quota_available:
+            log_print("Quota exceeded. Cannot proceed.")
+            return
 
-        # Get new videos
-        new_videos = get_new_videos_with_shorts_filtering(youtube, channel_ids, last_check_time)
+        # Create or get custom playlist for automated watch later
+        playlist_id = create_or_get_custom_watch_later(youtube)
+        log_print(f"Using custom playlist ID: {playlist_id}")
 
-        if new_videos:
-            # Print new videos found
-            print("\nNew videos found:")
-            for i, video in enumerate(new_videos):
-                print(f"{i+1}. {video['title']} - {video['channel']}")
+        try:
+            # Get subscribed channels
+            channel_ids = get_subscriptions(youtube)
 
-            # Add videos to custom playlist
-            video_ids = [video['id'] for video in new_videos]
-            add_to_watch_later(youtube, video_ids, playlist_id)
-        else:
-            print("No new videos found since last check.")
+            # Get the last check time
+            last_check_time = get_last_check_time()
 
-        # Save the current time as the last check time
-        current_time = save_check_time()
-        print(f"Updated last check time to: {current_time}")
+            # Get new videos
+            new_videos = get_new_videos_with_shorts_filtering(youtube, channel_ids, last_check_time)
 
-    except Exception as e:
-        if "quota" in str(e).lower():
-            print("\nAPI Quota exceeded during execution.")
-            print("Try running the script again tomorrow when quota resets.")
-        else:
-            print(f"Error: {str(e)}")
+            if new_videos:
+                # Print new videos found
+                log_print("\nNew videos found:")
+                for i, video in enumerate(new_videos):
+                    log_print(f"{i+1}. {video['title']} - {video['channel']}")
+
+                # Add videos to custom playlist
+                video_ids = [video['id'] for video in new_videos]
+                add_to_watch_later(youtube, video_ids, playlist_id)
+            else:
+                log_print("No new videos found since last check.")
+
+            # Save the current time as the last check time
+            current_time = save_check_time()
+            log_print(f"Updated last check time to: {current_time}")
+
+        except Exception as e:
+            if "quota" in str(e).lower():
+                log_print("\nAPI Quota exceeded during execution.")
+                log_print("Try running the script again tomorrow when quota resets.")
+            else:
+                log_print(f"Error: {str(e)}")
+
+    finally:
+        # Always cleanup logging
+        cleanup_logging()
 
 def handle_quota_exceeded_fallback(youtube, watch_later_id):
     """A fallback method when API quota is exceeded.
 
     This prompts the user to manually provide YouTube video IDs.
     """
-    print("\n=== QUOTA EXCEEDED FALLBACK ===")
-    print("The YouTube API quota has been exceeded.")
-    print("As a fallback, you can manually enter YouTube video IDs to add to your Watch Later playlist.")
-    print("To get a video ID, go to the YouTube video and look at the URL.")
-    print("Example: In https://www.youtube.com/watch?v=dQw4w9WgXcQ, the ID is 'dQw4w9WgXcQ'")
+    log_print("\n=== QUOTA EXCEEDED FALLBACK ===")
+    log_print("The YouTube API quota has been exceeded.")
+    log_print("As a fallback, you can manually enter YouTube video IDs to add to your Watch Later playlist.")
+    log_print("To get a video ID, go to the YouTube video and look at the URL.")
+    log_print("Example: In https://www.youtube.com/watch?v=dQw4w9WgXcQ, the ID is 'dQw4w9WgXcQ'")
 
     video_ids = []
     while True:
@@ -679,13 +729,13 @@ def handle_quota_exceeded_fallback(youtube, watch_later_id):
     if video_ids:
         add_to_watch_later(youtube, video_ids, watch_later_id)
     else:
-        print("No videos were added.")
+        log_print("No videos were added.")
 
-    print("\nTIP: To avoid quota issues in the future, try:")
-    print("1. Creating a new project in Google Cloud Console")
-    print("2. Requesting a quota increase for your project")
-    print("3. Running this script less frequently (e.g., once per week instead of daily)")
-    print("4. Using the scheduling option in the script to run during off-peak hours")
+    log_print("\nTIP: To avoid quota issues in the future, try:")
+    log_print("1. Creating a new project in Google Cloud Console")
+    log_print("2. Requesting a quota increase for your project")
+    log_print("3. Running this script less frequently (e.g., once per week instead of daily)")
+    log_print("4. Using the scheduling option in the script to run during off-peak hours")
 
 if __name__ == '__main__':
     main()
