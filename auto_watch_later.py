@@ -47,7 +47,7 @@ def setup_logging():
     global log_file
 
     # Create log folder if it doesn't exist
-    log_folder = 'log'
+    log_folder = 'logs'
     if not os.path.exists(log_folder):
         os.makedirs(log_folder)
 
