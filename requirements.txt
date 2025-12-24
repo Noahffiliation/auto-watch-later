@@ -14,7 +14,7 @@ proto-plus==1.27.0
 protobuf==6.33.2
 pyasn1==0.6.1
 pyasn1_modules==0.4.2
-pyparsing==3.3.0
+pyparsing==3.3.1
 requests==2.32.5
 requests-oauthlib==2.0.0
 rsa==4.9.1
