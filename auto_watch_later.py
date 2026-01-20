@@ -182,30 +182,6 @@ def save_check_time():
         f.write(current_time)
     return current_time
 
-def parse_iso8601_duration(duration_str):
-    """
-    Parse ISO 8601 duration format (PT1H2M3S) to total seconds.
-
-    Args:
-        duration_str: String in ISO 8601 duration format
-
-    Returns:
-        Total duration in seconds
-    """
-    import re
-
-    time_pattern = re.compile(r'PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?')
-    match = time_pattern.match(duration_str)
-
-    if not match:
-        return 0
-
-    hours = int(match.group(1) or 0)
-    minutes = int(match.group(2) or 0)
-    seconds = int(match.group(3) or 0)
-
-    return hours * 3600 + minutes * 60 + seconds
-
 def get_channel_shorts_playlist_id(channel_id):
     """
     Convert a channel ID to its corresponding Shorts playlist ID.
