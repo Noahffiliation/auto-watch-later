@@ -5,3 +5,10 @@ last_check_time.txt
 .vscode
 run.bat
 logs
+__pycache__
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+.pytest_cache/
