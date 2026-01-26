@@ -1,4 +1,4 @@
-cachetools==5.5.2
+cachetools==6.2.5
 certifi==2026.1.4
 charset-normalizer==3.4.4
 colorama==0.4.6
