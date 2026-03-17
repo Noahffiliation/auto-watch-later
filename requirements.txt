@@ -2,7 +2,7 @@ cachetools==7.0.5
 certifi==2026.2.25
 charset-normalizer==3.4.6
 colorama==0.4.6
-coverage==7.13.4
+coverage==7.13.5
 google-api-core==2.30.0
 google-api-python-client==2.192.0
 google-auth==2.49.1
