@@ -13,7 +13,7 @@ httplib2==0.31.2
 idna==3.13
 iniconfig==2.3.0
 oauthlib==3.3.1
-packaging==26.1
+packaging==26.2
 pluggy==1.6.0
 proto-plus==1.27.2
 protobuf==6.33.5
