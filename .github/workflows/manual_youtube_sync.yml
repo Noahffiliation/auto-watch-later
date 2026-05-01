@@ -1,0 +1,50 @@
+name: YouTube Auto-Adder (Manual)
+
+on:
+  workflow_dispatch: # Strictly manual triggers only
+
+permissions:
+  contents: write # Required so the bot can update last_check_time.txt
+
+jobs:
+  execute:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Restore Secure Authentication Token
+        run: |
+          # Decodes your secure GitHub Secret back into the token.pickle file
+          echo "${{ secrets.YOUTUBE_TOKEN_PICKLE_B64 }}" | base64 --decode > token.pickle
+
+      - name: Run YouTube Script
+        run: python auto_watch_later.py
+
+      - name: Save Memory State (last_check_time.txt)
+        # This commits the updated timestamp back to your public repository
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add last_check_time.txt
+          # The '|| exit 0' prevents the workflow from failing if no new videos were found and the time didn't change
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Update last check time [skip ci]" && git push)
+
+      - name: Upload Logs
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: youtube-sync-logs
+          path: logs/*.txt
+          retention-days: 30
