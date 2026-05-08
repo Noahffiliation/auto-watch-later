@@ -429,9 +429,9 @@ google-auth-httplib2==0.4.0 \
     # via
     #   -r requirements.txt
     #   google-api-python-client
-google-auth-oauthlib==1.3.1 \
-    --hash=sha256:14c22c7b3dd3d06dbe44264144409039465effdd1eef94f7ce3710e486cc4bfa \
-    --hash=sha256:1a139ef23f1318756805b0e95f655c238bffd29655329a2978218248da4ee7f8
+google-auth-oauthlib==1.4.0 \
+    --hash=sha256:18b5e28880eb8eba9065c436becdc0ee8e4b59117a73a510679c82f70cd363d2 \
+    --hash=sha256:251314f213a9ee46a5ae73988e84fd7cca8bb68e7ecf4bfd45940f9e7f51d070
     # via -r requirements.txt
 googleapis-common-protos==1.75.0 \
     --hash=sha256:53a062ff3c32552fbd62c11fe23768b78e4ddf0494d5e5fd97d3f4689c75fbbd \
