@@ -1,7 +1,25 @@
 <h1 align="center">Auto Watch Later</h1>
 
+## 🚀 Quick Start
+
+### Local
+```bash
+pip install -r requirements.txt
+python auto_watch_later.py
+```
+
+### Docker
+```bash
+docker-compose up --build
+```
+The script will display an OAuth authorization link in the terminal. Open it in your browser to authorize access.
+
+📖 See [DOCKER.md](DOCKER.md) for details.
+
 ## Table of Contents
 - [About](#about)
+- [Quick Start](#-quick-start)
+- [Docker](#docker)
 - [Built Using](#built_using)
 - [Authors](#authors)
 - [Acknowledgments](#acknowledgement)
@@ -16,6 +34,18 @@ The drawback is I'm getting every single video/livestream from all my subscripti
 
 ### Note <a name = "note"></a>
 I whipped this up by [vibe-coding](https://en.wikipedia.org/wiki/Vibe_coding) in [Claude](https://claude.ai/). I've heard anecdotally that Claude tends to do better at coding tasks than other LLMs, so this project was a way to see if that's true.
+
+## Docker <a name = "docker"></a>
+
+### Simple setup
+```bash
+docker-compose up --build
+```
+
+**First run:** The script will display an OAuth authorization link. Open it in your browser to authorize access to YouTube. The `token.pickle` will be saved in the `./data/` volume.
+
+**Subsequent runs:** The token is persisted in the `./data/` volume, the script runs directly without requiring new authentication.
+
 
 ## Built Using <a name = "built_using"></a>
 - [Python](https://www.python.org/)
