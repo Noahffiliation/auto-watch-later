@@ -6,6 +6,10 @@ on:
 permissions:
   contents: write # Required so the bot can update last_check_time.txt
 
+env:
+  YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+  YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+
 jobs:
   execute:
     runs-on: ubuntu-latest
