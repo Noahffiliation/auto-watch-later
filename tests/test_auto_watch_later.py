@@ -328,19 +328,157 @@ def test_save_credentials(mocker):
     auto_watch_later.save_credentials('creds', 'token')
     pickle.dump.assert_called()
 
-def test_get_new_credentials(mocker):
-    # This is hard to test fully without mocking the flow object returned basically
+def test_has_browser(mocker):
+    # Case 1: Browser is available
+    mocker.patch('webbrowser.get', return_value=MagicMock())
+    assert auto_watch_later._has_browser() is True
+
+    # Case 2: Browser not available
+    import webbrowser
+    mocker.patch('webbrowser.get', side_effect=webbrowser.Error)
+    assert auto_watch_later._has_browser() is False
+
+def test_get_client_credentials_env(mocker):
+    mocker.patch.dict('os.environ', {'YOUTUBE_CLIENT_ID': 'env_id', 'YOUTUBE_CLIENT_SECRET': 'env_secret'})
+    client_id, client_secret = auto_watch_later._get_client_credentials()
+    assert client_id == 'env_id'
+    assert client_secret == 'env_secret'
+
+def test_get_client_credentials_file_installed(mocker):
+    mocker.patch.dict('os.environ', {}, clear=True)
+    mocker.patch('os.path.exists', return_value=True)
+    mock_open_func = mock_open(read_data='{"installed": {"client_id": "file_id", "client_secret": "file_secret"}}')
+    mocker.patch('builtins.open', mock_open_func)
+    
+    client_id, client_secret = auto_watch_later._get_client_credentials()
+    assert client_id == 'file_id'
+    assert client_secret == 'file_secret'
+
+def test_get_client_credentials_file_web(mocker):
+    mocker.patch.dict('os.environ', {}, clear=True)
+    mocker.patch('os.path.exists', return_value=True)
+    mock_open_func = mock_open(read_data='{"web": {"client_id": "file_id_web", "client_secret": "file_secret_web"}}')
+    mocker.patch('builtins.open', mock_open_func)
+    
+    client_id, client_secret = auto_watch_later._get_client_credentials()
+    assert client_id == 'file_id_web'
+    assert client_secret == 'file_secret_web'
+
+def test_get_client_credentials_file_invalid(mocker):
+    mocker.patch.dict('os.environ', {}, clear=True)
+    mocker.patch('os.path.exists', return_value=True)
+    mock_open_func = mock_open(read_data='{"other": {}}')
+    mocker.patch('builtins.open', mock_open_func)
+    mocker.patch('sys.exit', side_effect=SystemExit)
+    
+    with pytest.raises(SystemExit):
+        auto_watch_later._get_client_credentials()
+
+def test_get_client_credentials_missing(mocker):
+    mocker.patch.dict('os.environ', {}, clear=True)
+    mocker.patch('os.path.exists', return_value=False)
+    mocker.patch('sys.exit', side_effect=SystemExit)
+    
+    with pytest.raises(SystemExit):
+        auto_watch_later._get_client_credentials()
+
+def test_get_credentials_browser_flow(mocker):
     mock_flow = MagicMock()
-    mocker.patch('google_auth_oauthlib.flow.InstalledAppFlow.from_client_secrets_file', return_value=mock_flow)
-    mock_flow.run_local_server.return_value = 'creds'
+    mocker.patch('google_auth_oauthlib.flow.InstalledAppFlow.from_client_config', return_value=mock_flow)
+    mock_flow.run_local_server.return_value = 'browser_creds'
+    
+    creds = auto_watch_later._get_credentials_browser_flow('id', 'secret')
+    assert creds == 'browser_creds'
 
-    assert auto_watch_later.get_new_credentials() == 'creds'
+def test_get_credentials_device_flow_success(mocker):
+    # Mock urllib.request.urlopen
+    mock_response1 = MagicMock()
+    mock_response1.read.return_value = b'{"device_code": "dev_code", "user_code": "user_code", "verification_url": "http://verify", "interval": 1}'
+    
+    mock_response2 = MagicMock()
+    mock_response2.read.return_value = b'{"access_token": "token123", "refresh_token": "refresh123"}'
+    
+    mocker.patch('urllib.request.urlopen', side_effect=[mock_response1, mock_response2])
+    mocker.patch('time.sleep') # do not sleep
 
-    # Test file not found
-    mocker.patch('google_auth_oauthlib.flow.InstalledAppFlow.from_client_secrets_file', side_effect=FileNotFoundError)
-    mocker.patch('sys.exit')
-    auto_watch_later.get_new_credentials()
-    sys.exit.assert_called_with(1)
+    creds = auto_watch_later._get_credentials_device_flow('id', 'secret')
+    
+    assert creds.token == 'token123'
+    assert creds.refresh_token == 'refresh123'
+    assert creds.client_id == 'id'
+    assert creds.client_secret == 'secret'
+
+def test_get_credentials_device_flow_pending_then_success(mocker):
+    import urllib.error
+    from io import BytesIO
+
+    mock_response1 = MagicMock()
+    mock_response1.read.return_value = b'{"device_code": "dev_code", "user_code": "user_code", "verification_url": "http://verify", "interval": 1}'
+    
+    # First poll returns authorization_pending error, second returns success
+    fp = BytesIO(b'{"error": "authorization_pending"}')
+    err = urllib.error.HTTPError('url', 400, 'Bad Request', {}, fp)
+    
+    mock_response2 = MagicMock()
+    mock_response2.read.return_value = b'{"access_token": "token123", "refresh_token": "refresh123"}'
+    
+    mocker.patch('urllib.request.urlopen', side_effect=[mock_response1, err, mock_response2])
+    mocker.patch('time.sleep')
+
+    creds = auto_watch_later._get_credentials_device_flow('id', 'secret')
+    assert creds.token == 'token123'
+
+def test_get_credentials_device_flow_slow_down_then_success(mocker):
+    import urllib.error
+    from io import BytesIO
+
+    mock_response1 = MagicMock()
+    mock_response1.read.return_value = b'{"device_code": "dev_code", "user_code": "user_code", "verification_url": "http://verify", "interval": 1}'
+    
+    # First poll returns slow_down error, second returns success
+    fp = BytesIO(b'{"error": "slow_down"}')
+    err = urllib.error.HTTPError('url', 400, 'Bad Request', {}, fp)
+    
+    mock_response2 = MagicMock()
+    mock_response2.read.return_value = b'{"access_token": "token123", "refresh_token": "refresh123"}'
+    
+    mocker.patch('urllib.request.urlopen', side_effect=[mock_response1, err, mock_response2])
+    mocker.patch('time.sleep')
+
+    creds = auto_watch_later._get_credentials_device_flow('id', 'secret')
+    assert creds.token == 'token123'
+
+def test_get_credentials_device_flow_other_error(mocker):
+    import urllib.error
+    from io import BytesIO
+
+    mock_response1 = MagicMock()
+    mock_response1.read.return_value = b'{"device_code": "dev_code", "user_code": "user_code", "verification_url": "http://verify", "interval": 1}'
+    
+    # First poll returns access_denied error
+    fp = BytesIO(b'{"error": "access_denied"}')
+    err = urllib.error.HTTPError('url', 400, 'Bad Request', {}, fp)
+    
+    mocker.patch('urllib.request.urlopen', side_effect=[mock_response1, err])
+    mocker.patch('time.sleep')
+    mocker.patch('sys.exit', side_effect=SystemExit)
+
+    with pytest.raises(SystemExit):
+        auto_watch_later._get_credentials_device_flow('id', 'secret')
+
+def test_get_new_credentials_browser(mocker):
+    mocker.patch('auto_watch_later._get_client_credentials', return_value=('id', 'secret'))
+    mocker.patch('auto_watch_later._has_browser', return_value=True)
+    mocker.patch('auto_watch_later._get_credentials_browser_flow', return_value='browser_creds')
+    
+    assert auto_watch_later.get_new_credentials() == 'browser_creds'
+
+def test_get_new_credentials_device(mocker):
+    mocker.patch('auto_watch_later._get_client_credentials', return_value=('id', 'secret'))
+    mocker.patch('auto_watch_later._has_browser', return_value=False)
+    mocker.patch('auto_watch_later._get_credentials_device_flow', return_value='device_creds')
+    
+    assert auto_watch_later.get_new_credentials() == 'device_creds'
 
 def test_get_authenticated_service(mocker):
     # Case 1: Valid credentials loaded (easiest)
