@@ -100,7 +100,7 @@ def get_new_credentials():
     try:
         flow = InstalledAppFlow.from_client_secrets_file(
             'client_secrets.json', SCOPES)
-        return flow.run_local_server(port=0)
+        return flow.run_console()
     except FileNotFoundError:
         log_print("ERROR: You need to download the 'client_secrets.json' file from Google Cloud Console.")
         log_print("1. Go to https://console.cloud.google.com/")
