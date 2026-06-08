@@ -96,36 +96,69 @@ def handle_refresh_error(token_file):
     return None
 
 def get_new_credentials():
-    """Get new credentials using client secrets file - headless mode."""
-    try:
-        flow = InstalledAppFlow.from_client_secrets_file(
-            'client_secrets.json', SCOPES)
-        
-        # Génère l'URL manuellement
-        flow.redirect_uri = 'urn:ietf:wg:oauth:2.0:oob'
-        auth_url, _ = flow.authorization_url(
-            access_type='offline',
-            prompt='consent'
-        )
-        
-        log_print("\n=== AUTHENTIFICATION REQUISE ===")
-        log_print("1. Ouvre cette URL dans ton navigateur :\n")
-        log_print(auth_url)
-        log_print("\n2. Autorise l'accès et copie le code affiché par Google")
-        log_print("3. Colle-le ici :")
-        
-        code = input("Code : ").strip()
-        flow.fetch_token(code=code)
-        return flow.credentials
+    """Get new credentials using Device Flow - no browser needed on the device."""
+    import json
+    import urllib.request
+    import urllib.parse
 
+    try:
+        with open('client_secrets.json') as f:
+            secrets = json.load(f)
+        client_id = secrets['installed']['client_id']
+        client_secret = secrets['installed']['client_secret']
     except FileNotFoundError:
-        log_print("ERROR: You need to download the 'client_secrets.json' file from Google Cloud Console.")
-        log_print("1. Go to https://console.cloud.google.com/")
-        log_print("2. Create a project and enable YouTube Data API v3")
-        log_print("3. Create OAuth 2.0 credentials (Desktop application)")
-        log_print("4. Download the JSON file and rename it to 'client_secrets.json'")
-        log_print("5. Place it in the same directory as this script")
+        log_print("ERROR: client_secrets.json introuvable.")
         sys.exit(1)
+
+    # Étape 1 : demande du device_code et user_code
+    data = urllib.parse.urlencode({
+        'client_id': client_id,
+        'scope': ' '.join(SCOPES)
+    }).encode()
+    req = urllib.request.Request('https://oauth2.googleapis.com/device/code', data=data)
+    response = json.loads(urllib.request.urlopen(req).read())
+
+    device_code = response['device_code']
+    interval = response.get('interval', 5)
+
+    log_print("\n=== AUTHENTIFICATION REQUISE ===")
+    log_print(f"1. Va sur : {response['verification_url']}")
+    log_print(f"2. Entre le code : {response['user_code']}")
+    log_print("En attente de validation...\n")
+
+    # Étape 2 : polling jusqu'à validation
+    while True:
+        time.sleep(interval)
+        poll_data = urllib.parse.urlencode({
+            'client_id': client_id,
+            'client_secret': client_secret,
+            'device_code': device_code,
+            'grant_type': 'urn:ietf:params:oauth:grant-type:device_code'
+        }).encode()
+
+        try:
+            poll_req = urllib.request.Request('https://oauth2.googleapis.com/token', data=poll_data)
+            token_response = json.loads(urllib.request.urlopen(poll_req).read())
+
+            from google.oauth2.credentials import Credentials
+            return Credentials(
+                token=token_response['access_token'],
+                refresh_token=token_response.get('refresh_token'),
+                token_uri='https://oauth2.googleapis.com/token',
+                client_id=client_id,
+                client_secret=client_secret,
+                scopes=SCOPES
+            )
+        except urllib.error.HTTPError as e:
+            error = json.loads(e.read())
+            if error.get('error') == 'authorization_pending':
+                continue
+            elif error.get('error') == 'slow_down':
+                interval += 5
+                continue
+            else:
+                log_print(f"Erreur auth : {error}")
+                sys.exit(1)
 
 def save_credentials(credentials, token_file):
     """Save credentials to token file."""
