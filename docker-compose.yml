@@ -1,0 +1,11 @@
+services:
+  youtube-auto-watch-later:
+    build:
+      context: https://github.com/Noahffiliation/auto-watch-later.git
+      dockerfile: Dockerfile
+    container_name: youtube-auto-watch-later
+    volumes:
+      - ./data:/data
+    stdin_open: true
+    tty: true
+    restart: no

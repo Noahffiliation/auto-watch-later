@@ -11,12 +11,26 @@ Requirements:
 - google-auth-oauthlib
 - google-auth-httplib2
 
-Setup:
-1. Create a project in Google Cloud Console (https://console.cloud.google.com/)
-2. Enable YouTube Data API v3
-3. Create OAuth 2.0 credentials (Desktop application)
-4. Download the client_secrets.json file and place it in the same directory as this script
-5. Install requirements: pip install google-api-python-client google-auth-oauthlib google-auth-httplib2
+Setup (two modes):
+
+  Mode 1 - Desktop/PC (browser available):
+    1. Create a project in Google Cloud Console (https://console.cloud.google.com/)
+    2. Enable YouTube Data API v3
+    3. Create OAuth 2.0 credentials (Desktop application)
+    4. Download the JSON file, rename it to 'client_secrets.json' and place it next to this script
+    5. Install requirements: pip install google-api-python-client google-auth-oauthlib google-auth-httplib2
+    6. Run the script — a browser window will open automatically for authentication
+
+  Mode 2 - Headless/Docker/Server (no browser):
+    1. Create a project in Google Cloud Console (https://console.cloud.google.com/)
+    2. Enable YouTube Data API v3
+    3. Create OAuth 2.0 credentials (TVs and Limited Input devices)
+    4. Set environment variables: YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET
+       (or place client_secrets.json next to the script as a fallback)
+    5. Install requirements: pip install google-api-python-client google-auth-oauthlib google-auth-httplib2
+    6. Run the script — it will display a short URL and code to validate from any device
+
+The script detects automatically which mode to use based on browser availability.
 """
 
 import os
@@ -30,10 +44,11 @@ from google.auth.transport.requests import Request
 from google.auth.exceptions import RefreshError
 
 # If modifying these SCOPES, delete the file token.pickle.
+# Note: youtube.force-ssl is intentionally omitted — it is incompatible with the
+# Device Flow (headless/Docker mode) and redundant since the API uses HTTPS by default.
 SCOPES = [
     'https://www.googleapis.com/auth/youtube.readonly',
     'https://www.googleapis.com/auth/youtube',
-    'https://www.googleapis.com/auth/youtube.force-ssl'
 ]
 
 # File to store the last check time
@@ -95,20 +110,145 @@ def handle_refresh_error(token_file):
         log_print("Deleted invalid token file.")
     return None
 
-def get_new_credentials():
-    """Get new credentials using client secrets file."""
+def _has_browser():
+    """Detect whether a runnable browser is available on this system."""
+    import webbrowser
     try:
-        flow = InstalledAppFlow.from_client_secrets_file(
-            'client_secrets.json', SCOPES)
-        return flow.run_local_server(port=0)
-    except FileNotFoundError:
-        log_print("ERROR: You need to download the 'client_secrets.json' file from Google Cloud Console.")
-        log_print("1. Go to https://console.cloud.google.com/")
-        log_print("2. Create a project and enable YouTube Data API v3")
-        log_print("3. Create OAuth 2.0 credentials (Desktop application)")
-        log_print("4. Download the JSON file and rename it to 'client_secrets.json'")
-        log_print("5. Place it in the same directory as this script")
-        sys.exit(1)
+        webbrowser.get()
+        return True
+    except webbrowser.Error:
+        return False
+
+def _get_client_credentials():
+    """
+    Retrieve client_id and client_secret from environment variables or client_secrets.json.
+
+    Priority:
+      1. YOUTUBE_CLIENT_ID / YOUTUBE_CLIENT_SECRET environment variables
+      2. client_secrets.json file in the current directory
+
+    Returns:
+        Tuple (client_id, client_secret)
+    """
+    client_id = os.environ.get('YOUTUBE_CLIENT_ID')
+    client_secret = os.environ.get('YOUTUBE_CLIENT_SECRET')
+
+    if client_id and client_secret:
+        log_print("Using OAuth credentials from environment variables.")
+        return client_id, client_secret
+
+    if os.path.exists('client_secrets.json'):
+        import json
+        log_print("Using OAuth credentials from client_secrets.json.")
+        with open('client_secrets.json') as f:
+            secrets = json.load(f)
+        cfg = secrets.get('installed') or secrets.get('web')
+        if not cfg:
+            log_print("ERROR: client_secrets.json format not recognized.")
+            sys.exit(1)
+        return cfg['client_id'], cfg['client_secret']
+
+    log_print("ERROR: No OAuth credentials found.")
+    log_print("Provide YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET environment variables,")
+    log_print("or place a client_secrets.json file in the working directory.")
+    sys.exit(1)
+
+def _get_credentials_browser_flow(client_id, client_secret):
+    """
+    Authenticate via browser (Desktop/PC mode).
+    Opens a local browser window and handles the OAuth redirect automatically.
+    """
+    import json
+    config = {
+        "installed": {
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "redirect_uris": ["http://localhost"]
+        }
+    }
+    flow = InstalledAppFlow.from_client_config(config, SCOPES)
+    return flow.run_local_server(port=0)
+
+def _get_credentials_device_flow(client_id, client_secret):
+    """
+    Authenticate via Device Flow (headless/Docker/server mode).
+    Displays a short URL and user code — validate from any device, no interaction needed here.
+    """
+    import json
+    import urllib.request
+    import urllib.parse
+
+    # Step 1: Request device code and user code
+    data = urllib.parse.urlencode({
+        'client_id': client_id,
+        'scope': ' '.join(SCOPES)
+    }).encode()
+    req = urllib.request.Request('https://oauth2.googleapis.com/device/code', data=data)
+    response = json.loads(urllib.request.urlopen(req).read())
+
+    device_code = response['device_code']
+    interval = response.get('interval', 5)
+
+    log_print("\n=== AUTHENTIFICATION REQUISE ===")
+    log_print(f"1. Va sur : {response['verification_url']}")
+    log_print(f"2. Entre le code : {response['user_code']}")
+    log_print("En attente de la validation...\n")
+
+    # Step 2: Poll until the user completes authentication
+    while True:
+        time.sleep(interval)
+        poll_data = urllib.parse.urlencode({
+            'client_id': client_id,
+            'client_secret': client_secret,
+            'device_code': device_code,
+            'grant_type': 'urn:ietf:params:oauth:grant-type:device_code'
+        }).encode()
+
+        try:
+            poll_req = urllib.request.Request('https://oauth2.googleapis.com/token', data=poll_data)
+            token_response = json.loads(urllib.request.urlopen(poll_req).read())
+
+            from google.oauth2.credentials import Credentials
+            log_print("Authentification réussie.")
+            return Credentials(
+                token=token_response['access_token'],
+                refresh_token=token_response.get('refresh_token'),
+                token_uri='https://oauth2.googleapis.com/token',
+                client_id=client_id,
+                client_secret=client_secret,
+                scopes=SCOPES
+            )
+        except urllib.error.HTTPError as e:
+            error = json.loads(e.read())
+            if error.get('error') == 'authorization_pending':
+                continue
+            elif error.get('error') == 'slow_down':
+                interval += 5
+                continue
+            else:
+                log_print(f"Erreur d'authentification : {error}")
+                sys.exit(1)
+
+def get_new_credentials():
+    """
+    Get new OAuth credentials using the appropriate flow:
+    - Browser flow if a browser is available (Desktop/PC)
+    - Device flow if running headless (Docker/server)
+
+    Credentials source (in priority order):
+    1. YOUTUBE_CLIENT_ID / YOUTUBE_CLIENT_SECRET environment variables
+    2. client_secrets.json file in the current directory
+    """
+    client_id, client_secret = _get_client_credentials()
+
+    if _has_browser():
+        log_print("Browser detected — using browser-based authentication flow.")
+        return _get_credentials_browser_flow(client_id, client_secret)
+    else:
+        log_print("No browser detected — using Device Flow (headless mode).")
+        return _get_credentials_device_flow(client_id, client_secret)
 
 def save_credentials(credentials, token_file):
     """Save credentials to token file."""
