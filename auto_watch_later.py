@@ -96,11 +96,28 @@ def handle_refresh_error(token_file):
     return None
 
 def get_new_credentials():
-    """Get new credentials using client secrets file."""
+    """Get new credentials using client secrets file - headless mode."""
     try:
         flow = InstalledAppFlow.from_client_secrets_file(
             'client_secrets.json', SCOPES)
-        return flow.run_console()
+        
+        # Génère l'URL manuellement
+        flow.redirect_uri = 'urn:ietf:wg:oauth:2.0:oob'
+        auth_url, _ = flow.authorization_url(
+            access_type='offline',
+            prompt='consent'
+        )
+        
+        log_print("\n=== AUTHENTIFICATION REQUISE ===")
+        log_print("1. Ouvre cette URL dans ton navigateur :\n")
+        log_print(auth_url)
+        log_print("\n2. Autorise l'accès et copie le code affiché par Google")
+        log_print("3. Colle-le ici :")
+        
+        code = input("Code : ").strip()
+        flow.fetch_token(code=code)
+        return flow.credentials
+
     except FileNotFoundError:
         log_print("ERROR: You need to download the 'client_secrets.json' file from Google Cloud Console.")
         log_print("1. Go to https://console.cloud.google.com/")
