@@ -2,27 +2,57 @@
 
 ## 🚀 Quick Start
 
-### Local
+### Local (browser available)
 ```bash
 pip install -r requirements.txt
 python auto_watch_later.py
 ```
+A browser window will open automatically for OAuth authentication.
 
-### Docker
+### Docker / Headless server
 ```bash
 docker-compose up --build
 ```
-The script will display an OAuth authorization link in the terminal. Open it in your browser to authorize access.
+The script detects that no browser is available and switches to Device Flow: it displays a short URL and a code to validate from any device (phone, PC, etc.). No interaction needed in the terminal.
 
 📖 See [DOCKER.md](DOCKER.md) for details.
 
 ## Table of Contents
 - [About](#about)
 - [Quick Start](#-quick-start)
+- [Setup](#setup)
 - [Docker](#docker)
 - [Built Using](#built_using)
 - [Authors](#authors)
 - [Acknowledgments](#acknowledgement)
+
+## Setup <a name = "setup"></a>
+
+The script supports two authentication modes, detected automatically at runtime.
+
+### Mode 1 — Local / Desktop (browser available)
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a project and enable **YouTube Data API v3**
+3. Create OAuth 2.0 credentials → type **Desktop application**
+4. Download the JSON file, rename it to `client_secrets.json` and place it next to the script
+5. Run the script — a browser window opens automatically
+
+### Mode 2 — Docker / Headless server (no browser)
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a project and enable **YouTube Data API v3**
+3. Create OAuth 2.0 credentials → type **TVs and Limited Input devices**
+4. Set the following environment variables (e.g. in `docker-compose.yml`):
+   ```yaml
+   environment:
+     - YOUTUBE_CLIENT_ID=your_client_id
+     - YOUTUBE_CLIENT_SECRET=your_client_secret
+   ```
+   Alternatively, place `client_secrets.json` in the working directory as a fallback.
+5. Run the script — it displays a short URL and a code to validate from any device
+
+> **Note:** The `token.pickle` file is saved after first authentication and reused on subsequent runs. Mount `./data` as a volume to persist it across container restarts.
 
 ## About <a name = "about"></a>
 I watch YouTube on almost a daily basis, so I wanted a way to automatically add my subscriptions to a custom playlist so I can add them to the YouTube built-in Watch Later playlist. The YouTube Data API v3 doesn't let you mess with Watch Later directly, so I have to use a temp playlist and add all videos to Watch Later from there, which is just a "Add all to..." button in the playlist settings on the YouTube desktop website.
@@ -42,9 +72,9 @@ I whipped this up by [vibe-coding](https://en.wikipedia.org/wiki/Vibe_coding) in
 docker-compose up --build
 ```
 
-**First run:** The script will display an OAuth authorization link. Open it in your browser to authorize access to YouTube. The `token.pickle` will be saved in the `./data/` volume.
+**First run:** The script detects the headless environment and switches to Device Flow. It displays a short URL (e.g. `https://www.google.com/device`) and a code to enter. Open the URL on any device (phone, PC), enter the code, and authorize access. The `token.pickle` will be saved in the `./data/` volume.
 
-**Subsequent runs:** The token is persisted in the `./data/` volume, the script runs directly without requiring new authentication.
+**Subsequent runs:** The token is persisted in the `./data/` volume — the script runs directly without requiring new authentication.
 
 
 ## Built Using <a name = "built_using"></a>
