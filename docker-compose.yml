@@ -8,4 +8,4 @@ services:
       - ./data:/data
     stdin_open: true
     tty: true
-    restart: unless-stopped
+    restart: no
