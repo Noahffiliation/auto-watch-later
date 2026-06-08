@@ -32,8 +32,7 @@ from google.auth.exceptions import RefreshError
 # If modifying these SCOPES, delete the file token.pickle.
 SCOPES = [
     'https://www.googleapis.com/auth/youtube.readonly',
-    'https://www.googleapis.com/auth/youtube',
-    'https://www.googleapis.com/auth/youtube.force-ssl'
+    'https://www.googleapis.com/auth/youtube'
 ]
 
 # File to store the last check time
