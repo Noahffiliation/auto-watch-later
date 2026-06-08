@@ -5,6 +5,11 @@ on:
       - '**'
   pull_request:
     types: [opened, synchronize, reopened]
+
+env:
+  YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+  YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+
 jobs:
   sonarqube:
     name: SonarQube
