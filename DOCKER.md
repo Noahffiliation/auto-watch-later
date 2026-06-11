@@ -103,4 +103,6 @@ You can customize behavior by adding environment variables to `docker-compose.ym
 environment:
   - TZ=UTC
   - PYTHONUNBUFFERED=1
+  - INCLUDE_SHORTS=true
+  - INCLUDE_TEASERS=true
 ```

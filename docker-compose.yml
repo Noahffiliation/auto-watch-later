@@ -9,3 +9,6 @@ services:
     stdin_open: true
     tty: true
     restart: no
+    # environment:
+    #   - INCLUDE_SHORTS=false   # Set to true to include YouTube Shorts, default false
+    #   - INCLUDE_TEASERS=false  # Set to true to include teasers and trailers, default false
