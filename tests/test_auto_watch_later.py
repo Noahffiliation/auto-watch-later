@@ -96,7 +96,7 @@ def test_is_youtube_short_efficient():
     assert auto_watch_later.is_youtube_short_efficient('vid1', shorts_cache) is True
     assert auto_watch_later.is_youtube_short_efficient('vid3', shorts_cache) is False
 
-def test_filter_out_shorts_and_teasers():
+def test_filter_videos():
     video_list = [
         {'id': 'v1', 'title': 'Short Video', 'channel': 'c1'},
         {'id': 'v2', 'title': 'Long Video', 'channel': 'c1'},
@@ -104,7 +104,7 @@ def test_filter_out_shorts_and_teasers():
     ]
     shorts_cache = {'v1'}
 
-    filtered = auto_watch_later.filter_out_shorts_and_teasers(video_list, shorts_cache)
+    filtered = auto_watch_later.filter_videos(video_list, shorts_cache)
 
     assert len(filtered) == 1
     assert filtered[0]['id'] == 'v2'
