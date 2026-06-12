@@ -54,6 +54,30 @@ SCOPES = [
 # File to store the last check time
 LAST_CHECK_FILE = 'last_check_time.txt'
 
+# ---------------------------------------------------------------------------
+# Content filter settings — controlled via environment variables
+#
+# INCLUDE_SHORTS=true/false        Include YouTube Shorts  (default: false)
+# INCLUDE_TEASERS=true/false       Include teasers/trailers by title keyword (default: false)
+#
+# Examples (docker-compose.yml):
+#   environment:
+#     - INCLUDE_SHORTS=true
+#     - INCLUDE_TEASERS=true
+# ---------------------------------------------------------------------------
+
+def _env_bool(name, default):
+    """Read a boolean environment variable. Accepts 'true'/'false' (case-insensitive)."""
+    val = os.environ.get(name, '').strip().lower()
+    if val == 'true':
+        return True
+    if val == 'false':
+        return False
+    return default
+
+INCLUDE_SHORTS    = _env_bool('INCLUDE_SHORTS',    default=False)
+INCLUDE_TEASERS   = _env_bool('INCLUDE_TEASERS',   default=False)
+
 # Global log file handle
 log_file = None
 
@@ -471,17 +495,21 @@ def is_teaser_or_trailer(video_title):
     title_lower = video_title.lower()
     return 'teaser' in title_lower or 'trailer' in title_lower
 
-def filter_out_shorts_and_teasers(video_list, shorts_cache, context=""):
+def filter_videos(video_list, shorts_cache, context=""):
     """
-    Filter YouTube Shorts, teasers, and trailers from a list of videos using the cache.
+    Filter videos based on content type preferences.
+
+    Filtering is controlled by environment variables:
+      INCLUDE_SHORTS=true/false   (default: false — Shorts are excluded)
+      INCLUDE_TEASERS=true/false  (default: false — teasers/trailers are excluded)
 
     Args:
-        video_list: List of video dictionaries with 'id', 'title', 'channel'
+        video_list: List of video dicts with 'id', 'title', 'channel'
         shorts_cache: Set of known Shorts video IDs
         context: Context string for logging
 
     Returns:
-        List of videos with Shorts, teasers, and trailers removed
+        Filtered list of videos according to current settings.
     """
     filtered_videos = []
     shorts_count = 0
@@ -492,18 +520,27 @@ def filter_out_shorts_and_teasers(video_list, shorts_cache, context=""):
         video_title = video['title']
 
         if is_youtube_short_efficient(video_id, shorts_cache):
-            log_print(f"Skipping Short ({context}): {video_title} ({video['channel']})")
-            shorts_count += 1
+            if INCLUDE_SHORTS:
+                filtered_videos.append(video)
+                log_print(f"Found new Short ({context}): {video_title} ({video['channel']})")
+            else:
+                log_print(f"Skipping Short ({context}): {video_title} ({video['channel']})")
+                shorts_count += 1
+
         elif is_teaser_or_trailer(video_title):
-            log_print(f"Skipping teaser/trailer ({context}): {video_title} ({video['channel']})")
-            teaser_trailer_count += 1
+            if INCLUDE_TEASERS:
+                filtered_videos.append(video)
+                log_print(f"Found new teaser/trailer ({context}): {video_title} ({video['channel']})")
+            else:
+                log_print(f"Skipping teaser/trailer ({context}): {video_title} ({video['channel']})")
+                teaser_trailer_count += 1
+
         else:
             filtered_videos.append(video)
             log_print(f"Found new video ({context}): {video_title} ({video['channel']})")
 
     if shorts_count > 0:
         log_print(f"Filtered out {shorts_count} Shorts from {context} results")
-
     if teaser_trailer_count > 0:
         log_print(f"Filtered out {teaser_trailer_count} teasers/trailers from {context} results")
 
@@ -537,8 +574,8 @@ def get_videos_from_activities(youtube, channel_id, last_check_time, shorts_cach
                         'channel': channel_title
                     })
 
-        # Filter out Shorts using the cache
-        return filter_out_shorts_and_teasers(candidate_videos, shorts_cache, "activities")
+        # Filter videos according to content preferences
+        return filter_videos(candidate_videos, shorts_cache, "activities")
 
     except Exception as e:
         error_msg = str(e)
@@ -584,8 +621,8 @@ def get_videos_from_search(youtube, channel_id, last_check_time, shorts_cache):
                 'channel': channel_title
             })
 
-        # Filter out Shorts using the cache
-        return filter_out_shorts_and_teasers(candidate_videos, shorts_cache, "search")
+        # Filter videos according to content preferences
+        return filter_videos(candidate_videos, shorts_cache, "search")
 
     except Exception as search_error:
         log_print(f"Search fallback also failed: {str(search_error)}")
@@ -604,7 +641,18 @@ def get_new_videos_with_shorts_filtering(youtube, channel_ids, last_check_time):
     # First, build a cache of recent Shorts from subscribed channels
     shorts_cache = build_shorts_cache_for_channels(youtube, channel_ids, last_check_time)
 
-    log_print("NOTE: YouTube Shorts, teasers, and trailers will be automatically filtered out.")
+    # Log active filter settings
+    filters_off = []
+    if INCLUDE_SHORTS:
+        filters_off.append("Shorts included")
+    else:
+        filters_off.append("Shorts excluded")
+    if INCLUDE_TEASERS:
+        filters_off.append("teasers/trailers included")
+    else:
+        filters_off.append("teasers/trailers excluded")
+    log_print(f"Content filters: {', '.join(filters_off)}.")
+    log_print("(Set INCLUDE_SHORTS=true or INCLUDE_TEASERS=true to change.)")
     new_videos = []
 
     # Process channels in batches to avoid hitting quota limits too quickly
@@ -622,7 +670,7 @@ def get_new_videos_with_shorts_filtering(youtube, channel_ids, last_check_time):
         if not batch_videos and i < len(channel_ids) - batch_size:
             log_print("No videos found in this batch. Possible quota limitation. Continuing with next batch.")
 
-    log_print(f"Found {len(new_videos)} new videos (excluding Shorts, teasers, and trailers).")
+    log_print(f"Found {len(new_videos)} new videos after filtering.")
     return new_videos
 
 def process_channel_batch(youtube, channel_ids, last_check_time, shorts_cache):

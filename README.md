@@ -54,6 +54,23 @@ The script supports two authentication modes, detected automatically at runtime.
 
 > **Note:** The `token.pickle` file is saved after first authentication and reused on subsequent runs. Mount `./data` as a volume to persist it across container restarts.
 
+### Content filters
+
+By default, Shorts and teasers/trailers are excluded from the playlist. You can opt in via environment variables:
+
+| Variable | Default | Description |
+|---|---|---|
+| `INCLUDE_SHORTS` | `false` | Include YouTube Shorts |
+| `INCLUDE_TEASERS` | `false` | Include teasers and trailers (detected by title keywords) |
+
+```yaml
+environment:
+  - INCLUDE_SHORTS=true
+  - INCLUDE_TEASERS=true
+```
+
+These can be used in both local and Docker modes.
+
 ## About <a name = "about"></a>
 I watch YouTube on almost a daily basis, so I wanted a way to automatically add my subscriptions to a custom playlist so I can add them to the YouTube built-in Watch Later playlist. The YouTube Data API v3 doesn't let you mess with Watch Later directly, so I have to use a temp playlist and add all videos to Watch Later from there, which is just a "Add all to..." button in the playlist settings on the YouTube desktop website.
 
