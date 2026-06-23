@@ -21,6 +21,7 @@ The script detects that no browser is available and switches to Device Flow: it 
 - [About](#about)
 - [Quick Start](#-quick-start)
 - [Setup](#setup)
+- [Quota management](#quota-management)
 - [Docker](#docker)
 - [Built Using](#built_using)
 - [Authors](#authors)
@@ -70,6 +71,28 @@ environment:
 ```
 
 These can be used in both local and Docker modes.
+
+### Quota management
+
+The YouTube Data API v3 has a daily limit of 10,000 units. The script logs quota consumption at the end of every run:
+
+```
+=== API Quota consumed ===
+  playlistItems.insert: 53× (50 unit/call) = 2650 units 
+  activities.list: 355× (1 unit/call) = 355 units 
+  playlistItems.list: 265× (1 unit/call) = 265 units 
+  channels.list: 1× (1 unit/call) = 1 units 
+  Total : 3271 / 10000 units  (32.7% of daily quota)
+```
+
+If the quota is exceeded mid-run, the script saves its progress and resumes automatically on the next run — no videos are missed and no duplicate inserts occur. The following files are created in `./data` only when needed:
+
+| File | Purpose |
+|---|---|
+| `pending_videos.json` | Videos found but not yet added to the playlist |
+| `scan_progress.json` | Last channel index and Shorts cache for scan resume |
+| `playlist_id.txt` | Cached playlist ID to avoid scanning all playlists every run |
+| `subscriptions_cache.json` | Cached channel list (refreshed every 24h) |
 
 ## About <a name = "about"></a>
 I watch YouTube on almost a daily basis, so I wanted a way to automatically add my subscriptions to a custom playlist so I can add them to the YouTube built-in Watch Later playlist. The YouTube Data API v3 doesn't let you mess with Watch Later directly, so I have to use a temp playlist and add all videos to Watch Later from there, which is just a "Add all to..." button in the playlist settings on the YouTube desktop website.
