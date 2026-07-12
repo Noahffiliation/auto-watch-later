@@ -621,7 +621,7 @@ def test_quota_tracker_and_report(capsys):
     assert qt.total == 51
     
     # Check warning on 80% daily quota limit
-    for _ in range(160):  # 160 * 50 = 8000
+    for _ in range(160):
         qt.track('playlists.insert')
     qt.report()
     captured = capsys.readouterr()
@@ -674,11 +674,9 @@ def test_get_subscriptions_force_refresh(mock_youtube_client, mocker):
     mocker.patch('auto_watch_later.fetch_subscriptions_from_api', return_value=['c_api'])
     mocker.patch('auto_watch_later.save_subscriptions_cache')
     
-    # force_refresh=True
     subs = auto_watch_later.get_subscriptions(mock_youtube_client, force_refresh=True)
     assert subs == ['c_api']
     
-    # force_refresh=False
     subs_cached = auto_watch_later.get_subscriptions(mock_youtube_client, force_refresh=False)
     assert subs_cached == ['c_cached']
 
@@ -823,7 +821,7 @@ def test_get_new_videos_with_shorts_filtering_resume(mock_youtube_client, mocker
         'last_channel_index': 1,
         'shorts_cache': ['s1']
     }
-    videos, state = auto_watch_later.get_new_videos_with_shorts_filtering(
+    _, state = auto_watch_later.get_new_videos_with_shorts_filtering(
         mock_youtube_client, ['c1', 'c2'], '2025-01-01Z', resume_progress=resume
     )
     assert state['last_channel_index'] == 2
