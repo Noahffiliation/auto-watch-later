@@ -93,6 +93,9 @@ SCAN_PROGRESS_FILE = 'scan_progress.json'
 # File to cache the "Automated Watch Later" playlist ID
 PLAYLIST_ID_CACHE_FILE = 'playlist_id.txt'
 
+# API Endpoint Constants
+ENDPOINT_PLAYLIST_ITEMS_LIST = 'playlistItems.list'
+
 # Global log file handle
 log_file = None
 
@@ -110,14 +113,14 @@ class QuotaTracker:
     """
 
     COSTS = {
-        'subscriptions.list':    1,
-        'activities.list':       1,
-        'playlistItems.list':    1,
-        'playlistItems.insert':  50,
-        'playlists.list':        1,
-        'playlists.insert':      50,
-        'channels.list':         1,
-        'search.list':           100,
+        'subscriptions.list':          1,
+        'activities.list':             1,
+        ENDPOINT_PLAYLIST_ITEMS_LIST:  1,
+        'playlistItems.insert':        50,
+        'playlists.list':              1,
+        'playlists.insert':            50,
+        'channels.list':               1,
+        'search.list':                 100,
     }
     DAILY_LIMIT = 10_000
 
@@ -591,7 +594,7 @@ def fetch_playlist_page(youtube, request, cutoff_time, shorts_video_ids, max_res
         if not request:
             return None
         response = request.execute()
-        quota.track('playlistItems.list')
+        quota.track(ENDPOINT_PLAYLIST_ITEMS_LIST)
         should_continue = False
 
         for item in response.get('items', []):
@@ -1045,7 +1048,7 @@ def fetch_playlist_video_ids(youtube, playlist_id):
     while request:
         try:
             response = request.execute()
-            quota.track('playlistItems.list')
+            quota.track(ENDPOINT_PLAYLIST_ITEMS_LIST)
             for item in response.get('items', []):
                 video_ids.add(item['contentDetails']['videoId'])
             request = youtube.playlistItems().list_next(request, response)

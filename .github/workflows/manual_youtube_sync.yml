@@ -28,9 +28,11 @@ jobs:
           if [ -f requirements.txt ]; then pip install --only-binary :all: --require-hashes -r requirements.txt; fi
 
       - name: Restore Secure Authentication Token
+        env:
+          YOUTUBE_TOKEN_PICKLE_B64: ${{ secrets.YOUTUBE_TOKEN_PICKLE_B64 }}
         run: |
           # Decodes your secure GitHub Secret back into the token.pickle file
-          echo "${{ secrets.YOUTUBE_TOKEN_PICKLE_B64 }}" | base64 --decode > token.pickle
+          echo "$YOUTUBE_TOKEN_PICKLE_B64" | base64 --decode > token.pickle
 
       - name: Run YouTube Script
         run: python auto_watch_later.py
