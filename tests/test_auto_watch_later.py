@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, call, patch, mock_open
 import sys
 import os
 import datetime
-import pickle # Added missing import
+import pickle
 
 # Add the parent directory to sys.path so we can import the module
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -14,7 +14,8 @@ import auto_watch_later
 def mock_youtube_client():
     return MagicMock()
 
-def test_setup_logging(mocker):
+def test_setup_logging(mocker, monkeypatch):
+    monkeypatch.setattr(auto_watch_later, 'log_file', None)
     mocker.patch('os.makedirs')
     mocker.patch('os.path.exists', return_value=False) # Ensure makedirs is called
     mock_open_func = mocker.mock_open()
@@ -26,19 +27,19 @@ def test_setup_logging(mocker):
     os.makedirs.assert_called_with('logs')
     assert auto_watch_later.log_file is not None
 
-def test_cleanup_logging(mocker):
+def test_cleanup_logging(monkeypatch):
     # Setup mock log file
     mock_file = MagicMock()
-    auto_watch_later.log_file = mock_file
+    monkeypatch.setattr(auto_watch_later, "log_file", mock_file)
 
     auto_watch_later.cleanup_logging()
 
     mock_file.close.assert_called_once()
 
-def test_log_print(capsys):
+def test_log_print(capsys, monkeypatch):
     # Mock log_file
     mock_file = MagicMock()
-    auto_watch_later.log_file = mock_file
+    monkeypatch.setattr(auto_watch_later, "log_file", mock_file)
 
     message = "Test message"
     auto_watch_later.log_print(message)
