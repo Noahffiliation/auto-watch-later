@@ -911,3 +911,89 @@ def test_main_resume_and_exception_paths(mocker):
     # Mock generic Exception in main flow
     mocker.patch('auto_watch_later.get_new_videos_with_shorts_filtering', side_effect=Exception("Generic Error"))
     auto_watch_later.main() # Should catch and log it
+
+def test_load_cache_files_not_found(mocker):
+    mocker.patch('os.path.exists', return_value=False)
+    assert auto_watch_later.load_subscriptions_cache() is None
+    assert auto_watch_later.load_pending_videos() == []
+    assert auto_watch_later.load_scan_progress() is None
+
+def test_fetch_playlist_page_edges(mock_youtube_client, mocker):
+    cutoff = datetime.datetime.now(datetime.timezone.utc)
+    shorts = set()
+
+    # None request
+    assert auto_watch_later.fetch_playlist_page(mock_youtube_client, None, cutoff, shorts, 50) is None
+
+    # Normal request with generic exception
+    mock_req = MagicMock()
+    mock_req.execute.side_effect = Exception("network glitch")
+    assert auto_watch_later.fetch_playlist_page(mock_youtube_client, mock_req, cutoff, shorts, 50) is None
+
+    # Request with item not meeting cutoff (should stop)
+    old_time = (cutoff - datetime.timedelta(days=10)).isoformat().replace('+00:00', 'Z')
+    mock_req_old = MagicMock()
+    mock_req_old.execute.return_value = {
+        'items': [{'snippet': {'publishedAt': old_time}, 'contentDetails': {'videoId': 'old1'}}]
+    }
+    assert auto_watch_later.fetch_playlist_page(mock_youtube_client, mock_req_old, cutoff, shorts, 50) is None
+
+    # Request reaching max_results (covers line 610 return None)
+    new_time = (cutoff + datetime.timedelta(days=1)).isoformat().replace('+00:00', 'Z')
+    mock_req_max = MagicMock()
+    mock_req_max.execute.return_value = {
+        'items': [{'snippet': {'publishedAt': new_time}, 'contentDetails': {'videoId': 'vid_max'}}]
+    }
+    # Passing max_results=1 with already 1 item in shorts_video_ids
+    shorts_filled = {'existing_vid'}
+    assert auto_watch_later.fetch_playlist_page(mock_youtube_client, mock_req_max, cutoff, shorts_filled, 1) is None
+
+def test_scan_channels_with_active_filters(mock_youtube_client, mocker, monkeypatch):
+    monkeypatch.setattr(auto_watch_later, 'INCLUDE_SHORTS', True)
+    monkeypatch.setattr(auto_watch_later, 'INCLUDE_TEASERS', True)
+    mocker.patch('auto_watch_later.build_shorts_cache_for_channels', return_value=set())
+    mocker.patch('auto_watch_later.get_channel_videos', return_value=[])
+
+    vids, state = auto_watch_later.get_new_videos_with_shorts_filtering(
+        mock_youtube_client, ['UC123'], '2026-01-01T00:00:00+00:00'
+    )
+    assert vids == []
+    assert state['last_channel_index'] == 1
+
+def test_add_videos_to_playlist_unhandled_exception(mock_youtube_client, mocker):
+    mocker.patch('auto_watch_later.fetch_playlist_video_ids', return_value=set())
+    mock_youtube_client.playlistItems().insert().execute.side_effect = Exception("unhandled api error")
+
+    added, remaining = auto_watch_later.add_to_watch_later(
+        mock_youtube_client, [{'id': 'v1', 'title': 'Test', 'channel': 'Ch'}], 'PL123'
+    )
+    assert added == 0
+    assert remaining == [{'id': 'v1', 'title': 'Test', 'channel': 'Ch'}]
+
+def test_main_quota_exceeded_with_pending_and_scan_state(mocker):
+    mocker.patch('auto_watch_later.setup_logging')
+    mocker.patch('auto_watch_later.cleanup_logging')
+    mocker.patch('auto_watch_later.get_authenticated_service')
+    mocker.patch('auto_watch_later.check_quota_usage', return_value=True)
+    mocker.patch('auto_watch_later.get_playlist_id', return_value='PL123')
+    mocker.patch('auto_watch_later.get_subscriptions', return_value=['c1'])
+    mocker.patch('auto_watch_later.get_last_check_time', return_value='time')
+    mocker.patch('auto_watch_later.load_pending_videos', return_value=[])
+    mocker.patch('auto_watch_later.load_scan_progress', return_value=None)
+    mocker.patch(
+        'auto_watch_later.get_new_videos_with_shorts_filtering',
+        return_value=([{'id': 'p1', 'title': 'T1', 'channel': 'C1'}], {'last_channel_index': 2, 'shorts_cache': ['s1']})
+    )
+    mocker.patch('auto_watch_later.add_to_watch_later', side_effect=auto_watch_later.QuotaExceededException())
+    
+    mock_save_pending = mocker.patch('auto_watch_later.save_pending_videos')
+    mock_save_scan = mocker.patch('auto_watch_later.save_scan_progress')
+
+    auto_watch_later.main()
+
+    mock_save_pending.assert_called_once_with([{'id': 'p1', 'title': 'T1', 'channel': 'C1'}])
+    mock_save_scan.assert_called_once_with(2, ['s1'])
+
+
+
+
