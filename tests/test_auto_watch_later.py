@@ -227,27 +227,28 @@ def test_fetch_or_create_playlist_new(mock_youtube_client):
 
 def test_get_playlist_id_cached_valid(mock_youtube_client, mocker):
     mocker.patch('os.path.exists', return_value=True)
-    mocker.patch('builtins.open', mock_open(read_data="PL_CACHED"))
-    
+    mocker.patch('builtins.open', mock_open(read_data='{"Automated Watch Later": "PL_CACHED"}'))
+
     mock_list_request = MagicMock()
     mock_youtube_client.playlists().list.return_value = mock_list_request
     mock_list_request.execute.return_value = {'items': [{'id': 'PL_CACHED'}]}
-    
+
     pid = auto_watch_later.get_playlist_id(mock_youtube_client)
     assert pid == 'PL_CACHED'
     mock_youtube_client.playlists().list.assert_called_with(part="id", id="PL_CACHED")
 
 def test_get_playlist_id_cached_invalid(mock_youtube_client, mocker):
     mocker.patch('os.path.exists', return_value=True)
-    mock_open_func = mock_open(read_data="PL_CACHED")
+    mock_open_func = mock_open(read_data='{"Automated Watch Later": "PL_CACHED"}')
     mocker.patch('builtins.open', mock_open_func)
-    
+    mocker.patch('os.replace')
+
     mock_list_request = MagicMock()
     mock_youtube_client.playlists().list.return_value = mock_list_request
     mock_list_request.execute.return_value = {'items': []} # invalid/deleted playlist
-    
+
     mocker.patch('auto_watch_later._fetch_or_create_playlist', return_value="PL_NEW")
-    
+
     pid = auto_watch_later.get_playlist_id(mock_youtube_client)
     assert pid == 'PL_NEW'
     auto_watch_later._fetch_or_create_playlist.assert_called_once()
@@ -256,9 +257,10 @@ def test_get_playlist_id_no_cache(mock_youtube_client, mocker):
     mocker.patch('os.path.exists', return_value=False)
     mock_open_func = mock_open()
     mocker.patch('builtins.open', mock_open_func)
-    
+    mocker.patch('os.replace')
+
     mocker.patch('auto_watch_later._fetch_or_create_playlist', return_value="PL_NEW")
-    
+
     pid = auto_watch_later.get_playlist_id(mock_youtube_client)
     assert pid == 'PL_NEW'
     auto_watch_later._fetch_or_create_playlist.assert_called_once()
@@ -830,8 +832,9 @@ def test_get_new_videos_with_shorts_filtering_resume(mock_youtube_client, mocker
 
 def test_get_playlist_id_validation_exception(mock_youtube_client, mocker):
     mocker.patch('os.path.exists', return_value=True)
-    mocker.patch('builtins.open', mock_open(read_data="PL_CACHED"))
-    
+    mocker.patch('builtins.open', mock_open(read_data='{"Automated Watch Later": "PL_CACHED"}'))
+    mocker.patch('os.replace')
+
     # Exception during validation list()
     mock_youtube_client.playlists().list.side_effect = Exception("Validation error")
     mocker.patch('auto_watch_later._fetch_or_create_playlist', return_value="PL_NEW")

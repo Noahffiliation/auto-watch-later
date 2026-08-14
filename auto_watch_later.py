@@ -59,11 +59,16 @@ LAST_CHECK_FILE = 'last_check_time.txt'
 #
 # INCLUDE_SHORTS=true/false        Include YouTube Shorts  (default: false)
 # INCLUDE_TEASERS=true/false       Include teasers/trailers by title keyword (default: false)
+# SHORT_PLAYLIST=true/false        Route Shorts to a dedicated "Automated Watch Later Shorts"
+#                                  playlist. Takes precedence over INCLUDE_SHORTS: when true,
+#                                  Shorts are always collected and added to the dedicated
+#                                  playlist regardless of INCLUDE_SHORTS. (default: false)
 #
 # Examples (docker-compose.yml):
 #   environment:
 #     - INCLUDE_SHORTS=true
 #     - INCLUDE_TEASERS=true
+#     - SHORT_PLAYLIST=true
 # ---------------------------------------------------------------------------
 
 def _env_bool(name, default):
@@ -77,6 +82,7 @@ def _env_bool(name, default):
 
 INCLUDE_SHORTS    = _env_bool('INCLUDE_SHORTS',    default=False)
 INCLUDE_TEASERS   = _env_bool('INCLUDE_TEASERS',   default=False)
+SHORT_PLAYLIST    = _env_bool('SHORT_PLAYLIST',    default=False)
 
 # File to cache subscribed channel IDs
 SUBSCRIPTIONS_CACHE_FILE = 'subscriptions_cache.json'
@@ -90,8 +96,8 @@ PENDING_VIDEOS_FILE = 'pending_videos.json'
 # File to persist scan progress (last channel index + partial shorts cache)
 SCAN_PROGRESS_FILE = 'scan_progress.json'
 
-# File to cache the "Automated Watch Later" playlist ID
-PLAYLIST_ID_CACHE_FILE = 'playlist_id.txt'
+# File to cache playlist IDs (JSON object keyed by playlist name)
+PLAYLIST_ID_CACHE_FILE = 'playlists_id.txt'
 
 # API Endpoint Constants
 ENDPOINT_PLAYLIST_ITEMS_LIST = 'playlistItems.list'
@@ -726,6 +732,10 @@ def filter_videos(video_list, shorts_cache, context=""):
     Filtering is controlled by environment variables:
       INCLUDE_SHORTS=true/false   (default: false — Shorts are excluded)
       INCLUDE_TEASERS=true/false  (default: false — teasers/trailers are excluded)
+      SHORT_PLAYLIST=true/false   (default: false — takes precedence over INCLUDE_SHORTS:
+                                   when true, Shorts are always kept and tagged with
+                                   'is_short' so the caller can route them to the
+                                   dedicated Shorts playlist)
 
     Args:
         video_list: List of video dicts with 'id', 'title', 'channel'
@@ -733,7 +743,8 @@ def filter_videos(video_list, shorts_cache, context=""):
         context: Context string for logging
 
     Returns:
-        Filtered list of videos according to current settings.
+        Filtered list of videos according to current settings. Shorts destined for
+        the dedicated playlist carry an 'is_short' key set to True.
     """
     filtered_videos = []
     shorts_count = 0
@@ -744,7 +755,11 @@ def filter_videos(video_list, shorts_cache, context=""):
         video_title = video['title']
 
         if is_youtube_short_efficient(video_id, shorts_cache):
-            if INCLUDE_SHORTS:
+            if SHORT_PLAYLIST:
+                video['is_short'] = True  # routed to the dedicated Shorts playlist
+                filtered_videos.append(video)
+                log_print(f"Found new Short for Shorts playlist ({context}): {video_title} ({video['channel']})")
+            elif INCLUDE_SHORTS:
                 filtered_videos.append(video)
                 log_print(f"Found new Short ({context}): {video_title} ({video['channel']})")
             else:
@@ -896,7 +911,9 @@ def get_new_videos_with_shorts_filtering(youtube, channel_ids, last_check_time, 
 
     # Log active filter settings
     filters_off = []
-    if INCLUDE_SHORTS:
+    if SHORT_PLAYLIST:
+        filters_off.append("Shorts routed to dedicated playlist")
+    elif INCLUDE_SHORTS:
         filters_off.append("Shorts included")
     else:
         filters_off.append("Shorts excluded")
@@ -905,7 +922,7 @@ def get_new_videos_with_shorts_filtering(youtube, channel_ids, last_check_time, 
     else:
         filters_off.append("teasers/trailers excluded")
     log_print(f"Content filters: {', '.join(filters_off)}.")
-    log_print("(Set INCLUDE_SHORTS=true or INCLUDE_TEASERS=true to change.)")
+    log_print("(Set INCLUDE_SHORTS=true, INCLUDE_TEASERS=true or SHORT_PLAYLIST=true to change.)")
     new_videos = []
     batch_size = 5
     remaining = channel_ids[start_index:]
@@ -951,12 +968,12 @@ def get_channel_videos(youtube, channel_id, last_check_time, shorts_cache):
     # Fall back to search API if activities endpoint fails
     return get_videos_from_search(youtube, channel_id, last_check_time, shorts_cache)
 
-def _fetch_or_create_playlist(youtube):
+def _fetch_or_create_playlist(youtube, name="Automated Watch Later"):
     """
-    Scan the user's playlists for 'Automated Watch Later', creating it if absent.
+    Scan the user's playlists for the given name, creating it if absent.
     Always makes API calls — use get_playlist_id() for the cached version.
     """
-    custom_playlist_name = "Automated Watch Later"
+    custom_playlist_name = name
 
     request = youtube.playlists().list(
         part="snippet,id",
@@ -987,39 +1004,58 @@ def _fetch_or_create_playlist(youtube):
     log_print(f"Created new playlist with ID: {result['id']}")
     return result['id']
 
-def get_playlist_id(youtube):
-    """
-    Return the 'Automated Watch Later' playlist ID, using a local cache.
+def _load_playlist_id_cache():
+    """Load the {playlist_name: playlist_id} cache, or {} if missing/invalid."""
+    import json
+    if not os.path.exists(PLAYLIST_ID_CACHE_FILE):
+        return {}
+    try:
+        with open(PLAYLIST_ID_CACHE_FILE, 'r') as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
 
-    The ID is stored in PLAYLIST_ID_CACHE_FILE after the first lookup and
-    reused on every subsequent run — no API call needed.
+def _save_playlist_id_cache(cache):
+    """Persist the {playlist_name: playlist_id} cache to disk (atomic write)."""
+    import json
+    tmp = PLAYLIST_ID_CACHE_FILE + '.tmp'
+    with open(tmp, 'w') as f:
+        json.dump(cache, f)
+    os.replace(tmp, PLAYLIST_ID_CACHE_FILE)
+
+def get_playlist_id(youtube, name="Automated Watch Later"):
+    """
+    Return the playlist ID for the given name, using a local cache.
+
+    IDs for every playlist (main and Shorts) are stored together in
+    PLAYLIST_ID_CACHE_FILE as a JSON object keyed by playlist name, and reused on
+    every subsequent run — no API call needed.
     If the cached ID is stale (playlist deleted/renamed), the API returns 404
     and this function falls back to a fresh scan automatically.
     """
-    # Try cache first
-    if os.path.exists(PLAYLIST_ID_CACHE_FILE):
-        with open(PLAYLIST_ID_CACHE_FILE, 'r') as f:
-            cached_id = f.read().strip()
-        if cached_id:
-            # Validate the cached ID with a cheap API call
-            try:
-                resp = youtube.playlists().list(
-                    part="id",
-                    id=cached_id
-                ).execute()
-                if resp.get('items'):
-                    log_print(f"Using cached playlist ID: {cached_id}")
-                    return cached_id
-                else:
-                    log_print("Cached playlist ID no longer valid. Scanning for playlist...")
-            except Exception:
-                log_print("Could not validate cached playlist ID. Scanning for playlist...")
+    cache = _load_playlist_id_cache()
+    cached_id = cache.get(name)
+    if cached_id:
+        # Validate the cached ID with a cheap API call
+        try:
+            resp = youtube.playlists().list(
+                part="id",
+                id=cached_id
+            ).execute()
+            if resp.get('items'):
+                log_print(f"Using cached playlist ID for '{name}': {cached_id}")
+                return cached_id
+            else:
+                log_print(f"Cached playlist ID for '{name}' no longer valid. Scanning for playlist...")
+        except Exception:
+            log_print(f"Could not validate cached playlist ID for '{name}'. Scanning for playlist...")
 
     # Cache miss or invalid — fetch from API and cache the result
-    playlist_id = _fetch_or_create_playlist(youtube)
-    with open(PLAYLIST_ID_CACHE_FILE, 'w') as f:
-        f.write(playlist_id)
-    log_print(f"Playlist ID cached to {PLAYLIST_ID_CACHE_FILE}.")
+    playlist_id = _fetch_or_create_playlist(youtube, name)
+    cache[name] = playlist_id
+    _save_playlist_id_cache(cache)
+    log_print(f"Playlist ID for '{name}' cached to {PLAYLIST_ID_CACHE_FILE}.")
     return playlist_id
 
 def fetch_playlist_video_ids(youtube, playlist_id):
@@ -1144,6 +1180,44 @@ def add_to_watch_later(youtube, videos, playlist_id):
     log_print(f"Summary: Added {added_count} videos, {already_in_playlist_count} already in playlist.")
     return added_count, remaining
 
+def add_videos_to_playlists(youtube, videos, main_playlist_id, shorts_playlist_id):
+    """
+    Route videos to the main playlist or the dedicated Shorts playlist.
+
+    Videos tagged with 'is_short' (set by filter_videos when SHORT_PLAYLIST=true)
+    go to shorts_playlist_id; everything else goes to main_playlist_id. When
+    shorts_playlist_id is None (SHORT_PLAYLIST disabled), every video goes to the
+    main playlist — this also keeps resume robust if the setting was toggled off
+    between runs.
+
+    Args:
+        youtube: Authenticated YouTube API client
+        videos: List of video dicts with 'id', 'title', 'channel'
+        main_playlist_id: Target playlist ID for regular videos
+        shorts_playlist_id: Target playlist ID for Shorts, or None
+
+    Returns:
+        Combined list of videos not yet added (empty on full success). Tags are
+        preserved so the caller can re-persist and resume.
+
+    Raises QuotaExceededException if the API quota is hit.
+    """
+    if shorts_playlist_id:
+        shorts_videos = [v for v in videos if v.get('is_short')]
+        main_videos = [v for v in videos if not v.get('is_short')]
+    else:
+        shorts_videos = []
+        main_videos = list(videos)
+
+    remaining = []
+    if main_videos:
+        _, rem = add_to_watch_later(youtube, main_videos, main_playlist_id)
+        remaining.extend(rem)
+    if shorts_videos:
+        _, rem = add_to_watch_later(youtube, shorts_videos, shorts_playlist_id)
+        remaining.extend(rem)
+    return remaining
+
 def check_quota_usage(youtube):
     """Check the current quota usage for the YouTube API."""
     try:
@@ -1183,6 +1257,12 @@ def main():
         playlist_id = get_playlist_id(youtube)
         log_print(f"Using playlist ID: {playlist_id}")
 
+        # Get or create the dedicated Shorts playlist only when enabled
+        shorts_playlist_id = None
+        if SHORT_PLAYLIST:
+            shorts_playlist_id = get_playlist_id(youtube, "Automated Watch Later Shorts")
+            log_print(f"Using Shorts playlist ID: {shorts_playlist_id}")
+
         # In-memory state — only written to disk on quota exceeded
         pending_videos = []   # videos found but not yet added
         scan_state = None     # current scan position + shorts cache
@@ -1194,7 +1274,7 @@ def main():
 
             if saved_pending:
                 log_print(f"\nResuming: adding {len(saved_pending)} pending videos from previous run...")
-                _, remaining = add_to_watch_later(youtube, saved_pending, playlist_id)
+                remaining = add_videos_to_playlists(youtube, saved_pending, playlist_id, shorts_playlist_id)
                 if not remaining:
                     clear_pending_videos()
                     log_print("All pending videos processed. Proceeding with new scan.")
@@ -1215,7 +1295,7 @@ def main():
                     log_print(f"{i+1}. {video['title']} - {video['channel']}")
 
                 pending_videos = new_videos  # track in memory before adding
-                _, remaining = add_to_watch_later(youtube, new_videos, playlist_id)
+                remaining = add_videos_to_playlists(youtube, new_videos, playlist_id, shorts_playlist_id)
                 pending_videos = remaining   # update to only what's left
 
             else:
