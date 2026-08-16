@@ -725,6 +725,45 @@ def is_teaser_or_trailer(video_title):
     title_lower = video_title.lower()
     return 'teaser' in title_lower or 'trailer' in title_lower
 
+def _evaluate_video_for_filter(video, shorts_cache, context=""):
+    """
+    Evaluate a single video against content preferences.
+
+    Args:
+        video: Video dict with 'id', 'title', 'channel'
+        shorts_cache: Set of known Shorts video IDs
+        context: Context string for logging
+
+    Returns:
+        tuple: (video_or_none, skip_reason)
+               video_or_none is the video dict if it should be included, or None if skipped.
+               skip_reason is 'short', 'teaser', or None indicating filtered category.
+    """
+    video_id = video['id']
+    video_title = video['title']
+    channel = video['channel']
+
+    if is_youtube_short_efficient(video_id, shorts_cache):
+        if SHORT_PLAYLIST:
+            video['is_short'] = True  # routed to the dedicated Shorts playlist
+            log_print(f"Found new Short for Shorts playlist ({context}): {video_title} ({channel})")
+            return video, None
+        if INCLUDE_SHORTS:
+            log_print(f"Found new Short ({context}): {video_title} ({channel})")
+            return video, None
+        log_print(f"Skipping Short ({context}): {video_title} ({channel})")
+        return None, 'short'
+
+    if is_teaser_or_trailer(video_title):
+        if INCLUDE_TEASERS:
+            log_print(f"Found new teaser/trailer ({context}): {video_title} ({channel})")
+            return video, None
+        log_print(f"Skipping teaser/trailer ({context}): {video_title} ({channel})")
+        return None, 'teaser'
+
+    log_print(f"Found new video ({context}): {video_title} ({channel})")
+    return video, None
+
 def filter_videos(video_list, shorts_cache, context=""):
     """
     Filter videos based on content type preferences.
@@ -751,32 +790,13 @@ def filter_videos(video_list, shorts_cache, context=""):
     teaser_trailer_count = 0
 
     for video in video_list:
-        video_id = video['id']
-        video_title = video['title']
-
-        if is_youtube_short_efficient(video_id, shorts_cache):
-            if SHORT_PLAYLIST:
-                video['is_short'] = True  # routed to the dedicated Shorts playlist
-                filtered_videos.append(video)
-                log_print(f"Found new Short for Shorts playlist ({context}): {video_title} ({video['channel']})")
-            elif INCLUDE_SHORTS:
-                filtered_videos.append(video)
-                log_print(f"Found new Short ({context}): {video_title} ({video['channel']})")
-            else:
-                log_print(f"Skipping Short ({context}): {video_title} ({video['channel']})")
-                shorts_count += 1
-
-        elif is_teaser_or_trailer(video_title):
-            if INCLUDE_TEASERS:
-                filtered_videos.append(video)
-                log_print(f"Found new teaser/trailer ({context}): {video_title} ({video['channel']})")
-            else:
-                log_print(f"Skipping teaser/trailer ({context}): {video_title} ({video['channel']})")
-                teaser_trailer_count += 1
-
-        else:
-            filtered_videos.append(video)
-            log_print(f"Found new video ({context}): {video_title} ({video['channel']})")
+        kept_video, skip_reason = _evaluate_video_for_filter(video, shorts_cache, context)
+        if kept_video is not None:
+            filtered_videos.append(kept_video)
+        elif skip_reason == 'short':
+            shorts_count += 1
+        elif skip_reason == 'teaser':
+            teaser_trailer_count += 1
 
     if shorts_count > 0:
         log_print(f"Filtered out {shorts_count} Shorts from {context} results")
