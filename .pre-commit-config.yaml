@@ -1,0 +1,37 @@
+# =============================================================================
+# PRE-COMMIT CONFIGURATION TEMPLATE (Python)
+# =============================================================================
+# Location: Copy to .pre-commit-config.yaml in Python project roots
+# Setup:    pip install pre-commit && pre-commit install
+# Purpose:  Catches syntax, formatting, and linting errors locally before git commit
+# =============================================================================
+
+repos:
+  # 1. Standard pre-commit hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+
+  # 2. Ruff (Fast Linting + Formatting)
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.1
+    hooks:
+      # Linter & autofix
+      - id: ruff
+        args: [--fix]
+      # Formatter (replaces Black)
+      - id: ruff-format
+
+  # 3. Mypy (Static Type Checking)
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.11.1
+    hooks:
+      - id: mypy
+        additional_dependencies: [types-requests]
+        args: [--ignore-missing-imports]

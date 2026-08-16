@@ -47,12 +47,12 @@ from google.auth.exceptions import RefreshError
 # Note: youtube.force-ssl is intentionally omitted — it is incompatible with the
 # Device Flow (headless/Docker mode) and redundant since the API uses HTTPS by default.
 SCOPES = [
-    'https://www.googleapis.com/auth/youtube.readonly',
-    'https://www.googleapis.com/auth/youtube',
+    "https://www.googleapis.com/auth/youtube.readonly",
+    "https://www.googleapis.com/auth/youtube",
 ]
 
 # File to store the last check time
-LAST_CHECK_FILE = 'last_check_time.txt'
+LAST_CHECK_FILE = "last_check_time.txt"
 
 # ---------------------------------------------------------------------------
 # Content filter settings — controlled via environment variables
@@ -71,39 +71,42 @@ LAST_CHECK_FILE = 'last_check_time.txt'
 #     - SHORT_PLAYLIST=true
 # ---------------------------------------------------------------------------
 
+
 def _env_bool(name, default):
     """Read a boolean environment variable. Accepts 'true'/'false' (case-insensitive)."""
-    val = os.environ.get(name, '').strip().lower()
-    if val == 'true':
+    val = os.environ.get(name, "").strip().lower()
+    if val == "true":
         return True
-    if val == 'false':
+    if val == "false":
         return False
     return default
 
-INCLUDE_SHORTS    = _env_bool('INCLUDE_SHORTS',    default=False)
-INCLUDE_TEASERS   = _env_bool('INCLUDE_TEASERS',   default=False)
-SHORT_PLAYLIST    = _env_bool('SHORT_PLAYLIST',    default=False)
+
+INCLUDE_SHORTS = _env_bool("INCLUDE_SHORTS", default=False)
+INCLUDE_TEASERS = _env_bool("INCLUDE_TEASERS", default=False)
+SHORT_PLAYLIST = _env_bool("SHORT_PLAYLIST", default=False)
 
 # File to cache subscribed channel IDs
-SUBSCRIPTIONS_CACHE_FILE = 'subscriptions_cache.json'
+SUBSCRIPTIONS_CACHE_FILE = "subscriptions_cache.json"
 
 # How many hours before refreshing the subscriptions cache
 SUBSCRIPTIONS_CACHE_TTL_HOURS = 24
 
 # File to persist videos discovered but not yet added to the playlist
-PENDING_VIDEOS_FILE = 'pending_videos.json'
+PENDING_VIDEOS_FILE = "pending_videos.json"
 
 # File to persist scan progress (last channel index + partial shorts cache)
-SCAN_PROGRESS_FILE = 'scan_progress.json'
+SCAN_PROGRESS_FILE = "scan_progress.json"
 
 # File to cache playlist IDs (JSON object keyed by playlist name)
-PLAYLIST_ID_CACHE_FILE = 'playlists_id.txt'
+PLAYLIST_ID_CACHE_FILE = "playlists_id.txt"
 
 # API Endpoint Constants
-ENDPOINT_PLAYLIST_ITEMS_LIST = 'playlistItems.list'
+ENDPOINT_PLAYLIST_ITEMS_LIST = "playlistItems.list"
 
 # Global log file handle
 log_file = None
+
 
 class QuotaTracker:
     """
@@ -119,14 +122,14 @@ class QuotaTracker:
     """
 
     COSTS = {
-        'subscriptions.list':          1,
-        'activities.list':             1,
-        ENDPOINT_PLAYLIST_ITEMS_LIST:  1,
-        'playlistItems.insert':        50,
-        'playlists.list':              1,
-        'playlists.insert':            50,
-        'channels.list':               1,
-        'search.list':                 100,
+        "subscriptions.list": 1,
+        "activities.list": 1,
+        ENDPOINT_PLAYLIST_ITEMS_LIST: 1,
+        "playlistItems.insert": 50,
+        "playlists.list": 1,
+        "playlists.insert": 50,
+        "channels.list": 1,
+        "search.list": 100,
     }
     DAILY_LIMIT = 10_000
 
@@ -147,28 +150,36 @@ class QuotaTracker:
     def report(self):
         """Log a summary of quota consumed during this run."""
         log_print("\n=== API Quota consumed ===")
-        for ep, count in sorted(self._calls.items(), key=lambda x: -x[1] * self.COSTS.get(x[0], 1)):
+        for ep, count in sorted(
+            self._calls.items(), key=lambda x: -x[1] * self.COSTS.get(x[0], 1)
+        ):
             unit = self.COSTS.get(ep, 1)
             total_cost = count * unit
             log_print(f"  {ep}: {count}× ({unit} unit/call) = {total_cost} units")
         pct = round(self._total / self.DAILY_LIMIT * 100, 1)
-        log_print(f"  Total: {self._total} / {self.DAILY_LIMIT} units ({pct}% of daily quota)")
+        log_print(
+            f"  Total: {self._total} / {self.DAILY_LIMIT} units ({pct}% of daily quota)"
+        )
         if self._total > self.DAILY_LIMIT * 0.8:
             log_print("  WARNING: more than 80% of the daily quota consumed.")
         log_print("")
 
+
 quota = QuotaTracker()
+
 
 class QuotaExceededException(Exception):
     """Raised when the YouTube API quota is exceeded."""
+
     pass
+
 
 def setup_logging():
     """Setup logging to file in log folder."""
     global log_file
 
     # Create log folder if it doesn't exist
-    log_folder = 'logs'
+    log_folder = "logs"
     if not os.path.exists(log_folder):
         os.makedirs(log_folder)
 
@@ -178,14 +189,17 @@ def setup_logging():
     log_path = os.path.join(log_folder, log_filename)
 
     # Open log file for writing
-    log_file = open(log_path, 'w', encoding='utf-8')
+    log_file = open(log_path, "w", encoding="utf-8")
 
     # Write header to log file
-    log_file.write(f"YouTube Auto-Adder Log - {current_time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+    log_file.write(
+        f"YouTube Auto-Adder Log - {current_time.strftime('%Y-%m-%d %H:%M:%S')}\n"
+    )
     log_file.write("=" * 50 + "\n\n")
     log_file.flush()
 
     return log_path
+
 
 def log_print(message):
     """Print message to console and write to log file."""
@@ -195,19 +209,22 @@ def log_print(message):
         log_file.write(message + "\n")
         log_file.flush()
 
+
 def cleanup_logging():
     """Close log file."""
     global log_file
     if log_file:
         log_file.close()
 
+
 def load_credentials(token_file):
     """Load credentials from token file if it exists."""
     if os.path.exists(token_file):
         log_print("Loading saved credentials...")
-        with open(token_file, 'rb') as token:
+        with open(token_file, "rb") as token:
             return pickle.load(token)
     return None
+
 
 def handle_refresh_error(token_file):
     """Handle token refresh error by removing the invalid token file."""
@@ -216,14 +233,17 @@ def handle_refresh_error(token_file):
         log_print("Deleted invalid token file.")
     return None
 
+
 def _has_browser():
     """Detect whether a runnable browser is available on this system."""
     import webbrowser
+
     try:
         webbrowser.get()
         return True
     except webbrowser.Error:
         return False
+
 
 def _get_client_credentials():
     """
@@ -236,46 +256,50 @@ def _get_client_credentials():
     Returns:
         Tuple (client_id, client_secret)
     """
-    client_id = os.environ.get('YOUTUBE_CLIENT_ID')
-    client_secret = os.environ.get('YOUTUBE_CLIENT_SECRET')
+    client_id = os.environ.get("YOUTUBE_CLIENT_ID")
+    client_secret = os.environ.get("YOUTUBE_CLIENT_SECRET")
 
     if client_id and client_secret:
         log_print("Using OAuth credentials from environment variables.")
         return client_id, client_secret
 
-    if os.path.exists('client_secrets.json'):
+    if os.path.exists("client_secrets.json"):
         import json
+
         log_print("Using OAuth credentials from client_secrets.json.")
-        with open('client_secrets.json') as f:
+        with open("client_secrets.json") as f:
             secrets = json.load(f)
-        cfg = secrets.get('installed') or secrets.get('web')
+        cfg = secrets.get("installed") or secrets.get("web")
         if not cfg:
             log_print("ERROR: client_secrets.json format not recognized.")
             sys.exit(1)
-        return cfg['client_id'], cfg['client_secret']
+        return cfg["client_id"], cfg["client_secret"]
 
     log_print("ERROR: No OAuth credentials found.")
-    log_print("Provide YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET environment variables,")
+    log_print(
+        "Provide YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET environment variables,"
+    )
     log_print("or place a client_secrets.json file in the working directory.")
     sys.exit(1)
+
 
 def _get_credentials_browser_flow(client_id, client_secret):
     """
     Authenticate via browser (Desktop/PC mode).
     Opens a local browser window and handles the OAuth redirect automatically.
     """
-    import json
     config = {
         "installed": {
             "client_id": client_id,
             "client_secret": client_secret,
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
             "token_uri": "https://oauth2.googleapis.com/token",
-            "redirect_uris": ["http://localhost"]
+            "redirect_uris": ["http://localhost"],
         }
     }
     flow = InstalledAppFlow.from_client_config(config, SCOPES)
     return flow.run_local_server(port=0)
+
 
 def _get_credentials_device_flow(client_id, client_secret):
     """
@@ -287,15 +311,14 @@ def _get_credentials_device_flow(client_id, client_secret):
     import urllib.parse
 
     # Step 1: Request device code and user code
-    data = urllib.parse.urlencode({
-        'client_id': client_id,
-        'scope': ' '.join(SCOPES)
-    }).encode()
-    req = urllib.request.Request('https://oauth2.googleapis.com/device/code', data=data)
+    data = urllib.parse.urlencode(
+        {"client_id": client_id, "scope": " ".join(SCOPES)}
+    ).encode()
+    req = urllib.request.Request("https://oauth2.googleapis.com/device/code", data=data)
     response = json.loads(urllib.request.urlopen(req).read())
 
-    device_code = response['device_code']
-    interval = response.get('interval', 5)
+    device_code = response["device_code"]
+    interval = response.get("interval", 5)
 
     log_print("\n=== AUTHENTIFICATION REQUISE ===")
     log_print(f"1. Va sur : {response['verification_url']}")
@@ -305,37 +328,43 @@ def _get_credentials_device_flow(client_id, client_secret):
     # Step 2: Poll until the user completes authentication
     while True:
         time.sleep(interval)
-        poll_data = urllib.parse.urlencode({
-            'client_id': client_id,
-            'client_secret': client_secret,
-            'device_code': device_code,
-            'grant_type': 'urn:ietf:params:oauth:grant-type:device_code'
-        }).encode()
+        poll_data = urllib.parse.urlencode(
+            {
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "device_code": device_code,
+                "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+            }
+        ).encode()
 
         try:
-            poll_req = urllib.request.Request('https://oauth2.googleapis.com/token', data=poll_data)
+            poll_req = urllib.request.Request(
+                "https://oauth2.googleapis.com/token", data=poll_data
+            )
             token_response = json.loads(urllib.request.urlopen(poll_req).read())
 
             from google.oauth2.credentials import Credentials
+
             log_print("Authentification réussie.")
             return Credentials(
-                token=token_response['access_token'],
-                refresh_token=token_response.get('refresh_token'),
-                token_uri='https://oauth2.googleapis.com/token',
+                token=token_response["access_token"],
+                refresh_token=token_response.get("refresh_token"),
+                token_uri="https://oauth2.googleapis.com/token",
                 client_id=client_id,
                 client_secret=client_secret,
-                scopes=SCOPES
+                scopes=SCOPES,
             )
         except urllib.error.HTTPError as e:
             error = json.loads(e.read())
-            if error.get('error') == 'authorization_pending':
+            if error.get("error") == "authorization_pending":
                 continue
-            elif error.get('error') == 'slow_down':
+            elif error.get("error") == "slow_down":
                 interval += 5
                 continue
             else:
                 log_print(f"Erreur d'authentification : {error}")
                 sys.exit(1)
+
 
 def get_new_credentials():
     """
@@ -356,15 +385,17 @@ def get_new_credentials():
         log_print("No browser detected — using Device Flow (headless mode).")
         return _get_credentials_device_flow(client_id, client_secret)
 
+
 def save_credentials(credentials, token_file):
     """Save credentials to token file."""
-    with open(token_file, 'wb') as token:
+    with open(token_file, "wb") as token:
         pickle.dump(credentials, token)
         log_print("Saved new credentials.")
 
+
 def get_authenticated_service():
     """Get authenticated YouTube API service."""
-    token_file = 'token.pickle'
+    token_file = "token.pickle"
     credentials = load_credentials(token_file)
 
     if not credentials or not credentials.valid:
@@ -375,7 +406,9 @@ def get_authenticated_service():
             except RefreshError as e:
                 log_print(f"Token refresh failed: {e}")
                 log_print("The stored token has expired or been revoked.")
-                log_print("Deleting the token file and requesting new authentication...")
+                log_print(
+                    "Deleting the token file and requesting new authentication..."
+                )
                 credentials = handle_refresh_error(token_file)
 
         if not credentials or not credentials.valid:
@@ -383,7 +416,8 @@ def get_authenticated_service():
             credentials = get_new_credentials()
             save_credentials(credentials, token_file)
 
-    return build('youtube', 'v3', credentials=credentials)
+    return build("youtube", "v3", credentials=credentials)
+
 
 def load_subscriptions_cache():
     """
@@ -393,60 +427,67 @@ def load_subscriptions_cache():
         List of channel IDs if cache is valid, None otherwise.
     """
     import json
+
     if not os.path.exists(SUBSCRIPTIONS_CACHE_FILE):
         return None
 
     try:
-        with open(SUBSCRIPTIONS_CACHE_FILE, 'r') as f:
+        with open(SUBSCRIPTIONS_CACHE_FILE, "r") as f:
             cache = json.load(f)
 
-        cached_at = datetime.datetime.fromisoformat(cache['cached_at'])
-        age_hours = (datetime.datetime.now(datetime.UTC) - cached_at).total_seconds() / 3600
+        cached_at = datetime.datetime.fromisoformat(cache["cached_at"])
+        age_hours = (
+            datetime.datetime.now(datetime.UTC) - cached_at
+        ).total_seconds() / 3600
 
         if age_hours < SUBSCRIPTIONS_CACHE_TTL_HOURS:
-            channel_ids = cache['channel_ids']
-            log_print(f"Using cached subscriptions ({len(channel_ids)} channels, "
-                      f"cached {age_hours:.1f}h ago, refresh in {SUBSCRIPTIONS_CACHE_TTL_HOURS - age_hours:.1f}h).")
+            channel_ids = cache["channel_ids"]
+            log_print(
+                f"Using cached subscriptions ({len(channel_ids)} channels, "
+                f"cached {age_hours:.1f}h ago, refresh in {SUBSCRIPTIONS_CACHE_TTL_HOURS - age_hours:.1f}h)."
+            )
             return channel_ids
         else:
-            log_print(f"Subscriptions cache expired ({age_hours:.1f}h old). Refreshing...")
+            log_print(
+                f"Subscriptions cache expired ({age_hours:.1f}h old). Refreshing..."
+            )
             return None
 
     except Exception as e:
         log_print(f"Could not read subscriptions cache: {e}. Fetching from API...")
         return None
 
+
 def save_subscriptions_cache(channel_ids):
     """Save channel IDs to local cache with a timestamp."""
     import json
+
     cache = {
-        'cached_at': datetime.datetime.now(datetime.UTC).isoformat(),
-        'channel_ids': channel_ids,
+        "cached_at": datetime.datetime.now(datetime.UTC).isoformat(),
+        "channel_ids": channel_ids,
     }
-    with open(SUBSCRIPTIONS_CACHE_FILE, 'w') as f:
+    with open(SUBSCRIPTIONS_CACHE_FILE, "w") as f:
         json.dump(cache, f)
     log_print(f"Subscriptions cache saved ({len(channel_ids)} channels).")
+
 
 def fetch_subscriptions_from_api(youtube):
     """Fetch all subscribed channel IDs from the YouTube API."""
     log_print("Fetching subscriptions from YouTube API...")
 
     channel_ids = []
-    request = youtube.subscriptions().list(
-        part="snippet",
-        mine=True,
-        maxResults=50
-    )
+    request = youtube.subscriptions().list(part="snippet", mine=True, maxResults=50)
 
     while request:
         response = request.execute()
-        quota.track('subscriptions.list')
-        for item in response['items']:
-            channel_ids.append(item['snippet']['resourceId']['channelId'])
+        quota.track("subscriptions.list")
+        for item in response["items"]:
+            channel_ids.append(item["snippet"]["resourceId"]["channelId"])
         request = youtube.subscriptions().list_next(request, response)
 
     log_print(f"Found {len(channel_ids)} subscriptions.")
     return channel_ids
+
 
 def get_subscriptions(youtube, force_refresh=False):
     """
@@ -471,28 +512,34 @@ def get_subscriptions(youtube, force_refresh=False):
     save_subscriptions_cache(channel_ids)
     return channel_ids
 
+
 def get_last_check_time():
     """Get the timestamp of the last time we checked for new videos."""
     if os.path.exists(LAST_CHECK_FILE):
-        with open(LAST_CHECK_FILE, 'r') as f:
+        with open(LAST_CHECK_FILE, "r") as f:
             timestamp = f.read().strip()
             if timestamp:
                 return timestamp
 
     # Default to 1 day ago if no last check time is saved
-    one_day_ago = (datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=1)).strftime('%Y-%m-%dT%H:%M:%SZ')
+    one_day_ago = (
+        datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=1)
+    ).strftime("%Y-%m-%dT%H:%M:%SZ")
     return one_day_ago
+
 
 def save_check_time():
     """Save the current time as the last check time."""
-    current_time = datetime.datetime.now(datetime.UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
-    with open(LAST_CHECK_FILE, 'w') as f:
+    current_time = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    with open(LAST_CHECK_FILE, "w") as f:
         f.write(current_time)
     return current_time
+
 
 # ---------------------------------------------------------------------------
 # Pending videos persistence
 # ---------------------------------------------------------------------------
+
 
 def load_pending_videos():
     """
@@ -502,33 +549,41 @@ def load_pending_videos():
         List of video dicts with 'id', 'title', 'channel', or [] if none.
     """
     import json
+
     if not os.path.exists(PENDING_VIDEOS_FILE):
         return []
     try:
-        with open(PENDING_VIDEOS_FILE, 'r') as f:
+        with open(PENDING_VIDEOS_FILE, "r") as f:
             data = json.load(f)
-        log_print(f"Resuming: {len(data)} pending videos found from previous interrupted run.")
+        log_print(
+            f"Resuming: {len(data)} pending videos found from previous interrupted run."
+        )
         return data
     except Exception as e:
         log_print(f"Could not read pending videos file: {e}. Starting fresh.")
         return []
 
+
 def save_pending_videos(videos):
     """Persist the pending video list to disk (atomic write)."""
     import json
-    tmp = PENDING_VIDEOS_FILE + '.tmp'
-    with open(tmp, 'w') as f:
+
+    tmp = PENDING_VIDEOS_FILE + ".tmp"
+    with open(tmp, "w") as f:
         json.dump(videos, f)
     os.replace(tmp, PENDING_VIDEOS_FILE)
+
 
 def clear_pending_videos():
     """Remove the pending videos file once all videos have been added."""
     if os.path.exists(PENDING_VIDEOS_FILE):
         os.remove(PENDING_VIDEOS_FILE)
 
+
 # ---------------------------------------------------------------------------
 # Scan progress persistence
 # ---------------------------------------------------------------------------
+
 
 def load_scan_progress():
     """
@@ -539,34 +594,43 @@ def load_scan_progress():
         or None if no progress file exists.
     """
     import json
+
     if not os.path.exists(SCAN_PROGRESS_FILE):
         return None
     try:
-        with open(SCAN_PROGRESS_FILE, 'r') as f:
+        with open(SCAN_PROGRESS_FILE, "r") as f:
             data = json.load(f)
-        log_print(f"Resuming scan from channel index {data['last_channel_index']} "
-                  f"({data['last_channel_index']} channels already processed).")
+        log_print(
+            f"Resuming scan from channel index {data['last_channel_index']} "
+            f"({data['last_channel_index']} channels already processed)."
+        )
         return data
     except Exception as e:
-        log_print(f"Could not read scan progress file: {e}. Starting scan from scratch.")
+        log_print(
+            f"Could not read scan progress file: {e}. Starting scan from scratch."
+        )
         return None
+
 
 def save_scan_progress(last_channel_index, shorts_cache):
     """Persist current scan position and shorts cache to disk (atomic write)."""
     import json
-    tmp = SCAN_PROGRESS_FILE + '.tmp'
+
+    tmp = SCAN_PROGRESS_FILE + ".tmp"
     data = {
-        'last_channel_index': last_channel_index,
-        'shorts_cache': list(shorts_cache),
+        "last_channel_index": last_channel_index,
+        "shorts_cache": list(shorts_cache),
     }
-    with open(tmp, 'w') as f:
+    with open(tmp, "w") as f:
         json.dump(data, f)
     os.replace(tmp, SCAN_PROGRESS_FILE)
+
 
 def clear_scan_progress():
     """Remove the scan progress file once a full scan completes successfully."""
     if os.path.exists(SCAN_PROGRESS_FILE):
         os.remove(SCAN_PROGRESS_FILE)
+
 
 def get_channel_shorts_playlist_id(channel_id):
     """
@@ -584,15 +648,18 @@ def get_channel_shorts_playlist_id(channel_id):
     # Replace "UC" with "UUSH" to get the Shorts playlist
     return "UUSH" + channel_id[2:]
 
+
 def process_playlist_item(item, cutoff_time):
     """Process a single playlist item and return video ID if it's recent enough."""
     from datetime import datetime
-    published_at_str = item['snippet']['publishedAt']
-    published_at = datetime.fromisoformat(published_at_str.replace('Z', '+00:00'))
+
+    published_at_str = item["snippet"]["publishedAt"]
+    published_at = datetime.fromisoformat(published_at_str.replace("Z", "+00:00"))
 
     if published_at > cutoff_time:
-        return item['contentDetails']['videoId']
+        return item["contentDetails"]["videoId"]
     return None
+
 
 def fetch_playlist_page(youtube, request, cutoff_time, shorts_video_ids, max_results):
     """Fetch and process a single page of playlist items."""
@@ -603,7 +670,7 @@ def fetch_playlist_page(youtube, request, cutoff_time, shorts_video_ids, max_res
         quota.track(ENDPOINT_PLAYLIST_ITEMS_LIST)
         should_continue = False
 
-        for item in response.get('items', []):
+        for item in response.get("items", []):
             video_id = process_playlist_item(item, cutoff_time)
             if video_id:
                 shorts_video_ids.add(video_id)
@@ -624,6 +691,7 @@ def fetch_playlist_page(youtube, request, cutoff_time, shorts_video_ids, max_res
         log_print(f"Error fetching playlist page: {str(e)}")
         return None
 
+
 def get_channel_shorts_video_ids(youtube, channel_id, published_after, max_results=50):
     """
     Get video IDs from a channel's Shorts playlist published after a certain time.
@@ -643,17 +711,20 @@ def get_channel_shorts_video_ids(youtube, channel_id, published_after, max_resul
 
     try:
         from datetime import datetime
+
         shorts_video_ids = set()
-        cutoff_time = datetime.fromisoformat(published_after.replace('Z', '+00:00'))
+        cutoff_time = datetime.fromisoformat(published_after.replace("Z", "+00:00"))
 
         request = youtube.playlistItems().list(
             part="contentDetails,snippet",
             playlistId=shorts_playlist_id,
-            maxResults=min(max_results, 50)
+            maxResults=min(max_results, 50),
         )
 
         while request and len(shorts_video_ids) < max_results:
-            request = fetch_playlist_page(youtube, request, cutoff_time, shorts_video_ids, max_results)
+            request = fetch_playlist_page(
+                youtube, request, cutoff_time, shorts_video_ids, max_results
+            )
 
         return shorts_video_ids
 
@@ -662,7 +733,10 @@ def get_channel_shorts_video_ids(youtube, channel_id, published_after, max_resul
     except Exception:
         return set()
 
-def build_shorts_cache_for_channels(youtube, channel_ids, published_after, max_shorts_per_channel=20):
+
+def build_shorts_cache_for_channels(
+    youtube, channel_ids, published_after, max_shorts_per_channel=20
+):
     """
     Build a cache of Shorts video IDs published after a certain time for the given channels.
 
@@ -681,10 +755,14 @@ def build_shorts_cache_for_channels(youtube, channel_ids, published_after, max_s
 
     for i, channel_id in enumerate(channel_ids):
         if i % 10 == 0:  # Progress update every 10 channels
-            log_print(f"Processing channel {i+1}/{len(channel_ids)} for recent Shorts...")
+            log_print(
+                f"Processing channel {i+1}/{len(channel_ids)} for recent Shorts..."
+            )
 
         try:
-            channel_shorts = get_channel_shorts_video_ids(youtube, channel_id, published_after, max_shorts_per_channel)
+            channel_shorts = get_channel_shorts_video_ids(
+                youtube, channel_id, published_after, max_shorts_per_channel
+            )
             if channel_shorts:
                 all_shorts.update(channel_shorts)
                 channels_with_shorts += 1
@@ -696,8 +774,11 @@ def build_shorts_cache_for_channels(youtube, channel_ids, published_after, max_s
             # Continue processing other channels if one fails
             continue
 
-    log_print(f"Recent Shorts cache built: {len(all_shorts)} Shorts from {channels_with_shorts} channels")
+    log_print(
+        f"Recent Shorts cache built: {len(all_shorts)} Shorts from {channels_with_shorts} channels"
+    )
     return all_shorts
+
 
 def is_youtube_short_efficient(video_id, shorts_cache):
     """
@@ -712,6 +793,7 @@ def is_youtube_short_efficient(video_id, shorts_cache):
     """
     return video_id in shorts_cache
 
+
 def is_teaser_or_trailer(video_title):
     """
     Check if a video title contains 'teaser' or 'trailer' keywords.
@@ -723,7 +805,8 @@ def is_teaser_or_trailer(video_title):
         Boolean indicating whether the video is a teaser or trailer
     """
     title_lower = video_title.lower()
-    return 'teaser' in title_lower or 'trailer' in title_lower
+    return "teaser" in title_lower or "trailer" in title_lower
+
 
 def _evaluate_video_for_filter(video, shorts_cache, context=""):
     """
@@ -739,30 +822,35 @@ def _evaluate_video_for_filter(video, shorts_cache, context=""):
                video_or_none is the video dict if it should be included, or None if skipped.
                skip_reason is 'short', 'teaser', or None indicating filtered category.
     """
-    video_id = video['id']
-    video_title = video['title']
-    channel = video['channel']
+    video_id = video["id"]
+    video_title = video["title"]
+    channel = video["channel"]
 
     if is_youtube_short_efficient(video_id, shorts_cache):
         if SHORT_PLAYLIST:
-            video['is_short'] = True  # routed to the dedicated Shorts playlist
-            log_print(f"Found new Short for Shorts playlist ({context}): {video_title} ({channel})")
+            video["is_short"] = True  # routed to the dedicated Shorts playlist
+            log_print(
+                f"Found new Short for Shorts playlist ({context}): {video_title} ({channel})"
+            )
             return video, None
         if INCLUDE_SHORTS:
             log_print(f"Found new Short ({context}): {video_title} ({channel})")
             return video, None
         log_print(f"Skipping Short ({context}): {video_title} ({channel})")
-        return None, 'short'
+        return None, "short"
 
     if is_teaser_or_trailer(video_title):
         if INCLUDE_TEASERS:
-            log_print(f"Found new teaser/trailer ({context}): {video_title} ({channel})")
+            log_print(
+                f"Found new teaser/trailer ({context}): {video_title} ({channel})"
+            )
             return video, None
         log_print(f"Skipping teaser/trailer ({context}): {video_title} ({channel})")
-        return None, 'teaser'
+        return None, "teaser"
 
     log_print(f"Found new video ({context}): {video_title} ({channel})")
     return video, None
+
 
 def filter_videos(video_list, shorts_cache, context=""):
     """
@@ -790,20 +878,25 @@ def filter_videos(video_list, shorts_cache, context=""):
     teaser_trailer_count = 0
 
     for video in video_list:
-        kept_video, skip_reason = _evaluate_video_for_filter(video, shorts_cache, context)
+        kept_video, skip_reason = _evaluate_video_for_filter(
+            video, shorts_cache, context
+        )
         if kept_video is not None:
             filtered_videos.append(kept_video)
-        elif skip_reason == 'short':
+        elif skip_reason == "short":
             shorts_count += 1
-        elif skip_reason == 'teaser':
+        elif skip_reason == "teaser":
             teaser_trailer_count += 1
 
     if shorts_count > 0:
         log_print(f"Filtered out {shorts_count} Shorts from {context} results")
     if teaser_trailer_count > 0:
-        log_print(f"Filtered out {teaser_trailer_count} teasers/trailers from {context} results")
+        log_print(
+            f"Filtered out {teaser_trailer_count} teasers/trailers from {context} results"
+        )
 
     return filtered_videos
+
 
 def get_videos_from_activities(youtube, channel_id, last_check_time, shorts_cache):
     """Try to get videos using the activities endpoint."""
@@ -813,25 +906,23 @@ def get_videos_from_activities(youtube, channel_id, last_check_time, shorts_cach
             part="snippet,contentDetails",
             channelId=channel_id,
             publishedAfter=last_check_time,
-            maxResults=10
+            maxResults=10,
         )
 
         response = request.execute()
-        quota.track('activities.list')
+        quota.track("activities.list")
         candidate_videos = []
 
-        for item in response.get('items', []):
-            if item['snippet']['type'] == 'upload':
-                if 'upload' in item.get('contentDetails', {}):
-                    video_id = item['contentDetails']['upload']['videoId']
-                    title = item['snippet']['title']
-                    channel_title = item['snippet']['channelTitle']
+        for item in response.get("items", []):
+            if item["snippet"]["type"] == "upload":
+                if "upload" in item.get("contentDetails", {}):
+                    video_id = item["contentDetails"]["upload"]["videoId"]
+                    title = item["snippet"]["title"]
+                    channel_title = item["snippet"]["channelTitle"]
 
-                    candidate_videos.append({
-                        'id': video_id,
-                        'title': title,
-                        'channel': channel_title
-                    })
+                    candidate_videos.append(
+                        {"id": video_id, "title": title, "channel": channel_title}
+                    )
 
         # Filter videos according to content preferences
         return filter_videos(candidate_videos, shorts_cache, "activities")
@@ -848,14 +939,15 @@ def get_videos_from_activities(youtube, channel_id, last_check_time, shorts_cach
         # For other errors, return None to trigger fallback to search
         return None
 
+
 def get_videos_from_search(youtube, channel_id, last_check_time, shorts_cache):
     """Fall back to search API to get videos."""
     try:
         log_print(f"Trying fallback search API for channel {channel_id}...")
         # Format date correctly for search API
         formatted_date = last_check_time
-        if '+' in formatted_date:  # Remove any timezone offset if present
-            formatted_date = formatted_date.split('+')[0] + 'Z'
+        if "+" in formatted_date:  # Remove any timezone offset if present
+            formatted_date = formatted_date.split("+")[0] + "Z"
 
         request = youtube.search().list(
             part="snippet",
@@ -863,23 +955,21 @@ def get_videos_from_search(youtube, channel_id, last_check_time, shorts_cache):
             publishedAfter=formatted_date,
             maxResults=5,
             type="video",
-            order="date"
+            order="date",
         )
 
         response = request.execute()
-        quota.track('search.list')
+        quota.track("search.list")
         candidate_videos = []
 
-        for item in response.get('items', []):
-            video_id = item['id']['videoId']
-            title = item['snippet']['title']
-            channel_title = item['snippet']['channelTitle']
+        for item in response.get("items", []):
+            video_id = item["id"]["videoId"]
+            title = item["snippet"]["title"]
+            channel_title = item["snippet"]["channelTitle"]
 
-            candidate_videos.append({
-                'id': video_id,
-                'title': title,
-                'channel': channel_title
-            })
+            candidate_videos.append(
+                {"id": video_id, "title": title, "channel": channel_title}
+            )
 
         # Filter videos according to content preferences
         return filter_videos(candidate_videos, shorts_cache, "search")
@@ -895,7 +985,10 @@ def get_videos_from_search(youtube, channel_id, last_check_time, shorts_cache):
         log_print(f"Search fallback also failed: {error_msg}")
         return []
 
-def get_new_videos_with_shorts_filtering(youtube, channel_ids, last_check_time, resume_progress=None):
+
+def get_new_videos_with_shorts_filtering(
+    youtube, channel_ids, last_check_time, resume_progress=None
+):
     """
     Get new videos from subscribed channels with efficient Shorts filtering.
 
@@ -920,14 +1013,18 @@ def get_new_videos_with_shorts_filtering(youtube, channel_ids, last_check_time, 
 
     # --- Resume or start fresh ---
     if resume_progress:
-        start_index = resume_progress['last_channel_index']
-        shorts_cache = set(resume_progress['shorts_cache'])
-        log_print(f"Resuming scan: {start_index}/{len(channel_ids)} channels already done, "
-                  f"{len(shorts_cache)} Shorts in cache.")
+        start_index = resume_progress["last_channel_index"]
+        shorts_cache = set(resume_progress["shorts_cache"])
+        log_print(
+            f"Resuming scan: {start_index}/{len(channel_ids)} channels already done, "
+            f"{len(shorts_cache)} Shorts in cache."
+        )
     else:
         start_index = 0
         log_print("Building cache of recent YouTube Shorts...")
-        shorts_cache = build_shorts_cache_for_channels(youtube, channel_ids, last_check_time)
+        shorts_cache = build_shorts_cache_for_channels(
+            youtube, channel_ids, last_check_time
+        )
 
     # Log active filter settings
     filters_off = []
@@ -942,7 +1039,9 @@ def get_new_videos_with_shorts_filtering(youtube, channel_ids, last_check_time, 
     else:
         filters_off.append("teasers/trailers excluded")
     log_print(f"Content filters: {', '.join(filters_off)}.")
-    log_print("(Set INCLUDE_SHORTS=true, INCLUDE_TEASERS=true or SHORT_PLAYLIST=true to change.)")
+    log_print(
+        "(Set INCLUDE_SHORTS=true, INCLUDE_TEASERS=true or SHORT_PLAYLIST=true to change.)"
+    )
     new_videos = []
     batch_size = 5
     remaining = channel_ids[start_index:]
@@ -950,43 +1049,54 @@ def get_new_videos_with_shorts_filtering(youtube, channel_ids, last_check_time, 
     absolute_index = start_index
 
     for batch_offset in range(0, len(remaining), batch_size):
-        batch = remaining[batch_offset:batch_offset + batch_size]
-        log_print(f"Processing channels {absolute_index + 1}–"
-                  f"{min(absolute_index + batch_size, total)}/{total}")
+        batch = remaining[batch_offset : batch_offset + batch_size]
+        log_print(
+            f"Processing channels {absolute_index + 1}–"
+            f"{min(absolute_index + batch_size, total)}/{total}"
+        )
 
         for channel_id in batch:
             # QuotaExceededException propagates up — caller will persist state
-            channel_videos = get_channel_videos(youtube, channel_id, last_check_time, shorts_cache)
+            channel_videos = get_channel_videos(
+                youtube, channel_id, last_check_time, shorts_cache
+            )
             new_videos.extend(channel_videos)
             absolute_index += 1
 
     log_print(f"Found {len(new_videos)} new videos after filtering.")
 
     scan_state = {
-        'last_channel_index': absolute_index,
-        'shorts_cache': shorts_cache,
+        "last_channel_index": absolute_index,
+        "shorts_cache": shorts_cache,
     }
     return new_videos, scan_state
+
 
 def process_channel_batch(youtube, channel_ids, last_check_time, shorts_cache):
     """Process a batch of channels to find new videos."""
     new_videos = []
 
     for channel_id in channel_ids:
-        channel_videos = get_channel_videos(youtube, channel_id, last_check_time, shorts_cache)
+        channel_videos = get_channel_videos(
+            youtube, channel_id, last_check_time, shorts_cache
+        )
         new_videos.extend(channel_videos)
 
     return new_videos
 
+
 def get_channel_videos(youtube, channel_id, last_check_time, shorts_cache):
     """Get new videos from a specific channel."""
     # Try using activities endpoint first
-    videos_from_activities = get_videos_from_activities(youtube, channel_id, last_check_time, shorts_cache)
+    videos_from_activities = get_videos_from_activities(
+        youtube, channel_id, last_check_time, shorts_cache
+    )
     if videos_from_activities is not None:
         return videos_from_activities
 
     # Fall back to search API if activities endpoint fails
     return get_videos_from_search(youtube, channel_id, last_check_time, shorts_cache)
+
 
 def _fetch_or_create_playlist(youtube, name="Automated Watch Later"):
     """
@@ -995,54 +1105,61 @@ def _fetch_or_create_playlist(youtube, name="Automated Watch Later"):
     """
     custom_playlist_name = name
 
-    request = youtube.playlists().list(
-        part="snippet,id",
-        mine=True,
-        maxResults=50
-    )
+    request = youtube.playlists().list(part="snippet,id", mine=True, maxResults=50)
     while request:
         response = request.execute()
-        quota.track('playlists.list')
-        for playlist in response['items']:
-            if playlist['snippet']['title'] == custom_playlist_name:
-                log_print(f"Found existing '{custom_playlist_name}' playlist with ID: {playlist['id']}")
-                return playlist['id']
+        quota.track("playlists.list")
+        for playlist in response["items"]:
+            if playlist["snippet"]["title"] == custom_playlist_name:
+                log_print(
+                    f"Found existing '{custom_playlist_name}' playlist with ID: {playlist['id']}"
+                )
+                return playlist["id"]
         request = youtube.playlists().list_next(request, response)
 
     log_print(f"Creating new '{custom_playlist_name}' playlist...")
-    result = youtube.playlists().insert(
-        part="snippet,status",
-        body={
-            "snippet": {
-                "title": custom_playlist_name,
-                "description": "Automatically updated playlist with new videos from subscriptions."
+    result = (
+        youtube.playlists()
+        .insert(
+            part="snippet,status",
+            body={
+                "snippet": {
+                    "title": custom_playlist_name,
+                    "description": "Automatically updated playlist with new videos from subscriptions.",
+                },
+                "status": {"privacyStatus": "private"},
             },
-            "status": {"privacyStatus": "private"}
-        }
-    ).execute()
-    quota.track('playlists.insert')
+        )
+        .execute()
+    )
+    quota.track("playlists.insert")
     log_print(f"Created new playlist with ID: {result['id']}")
-    return result['id']
+    return result["id"]
+
 
 def _load_playlist_id_cache():
     """Load the {playlist_name: playlist_id} cache, or {} if missing/invalid."""
     import json
+
     if not os.path.exists(PLAYLIST_ID_CACHE_FILE):
         return {}
     try:
-        with open(PLAYLIST_ID_CACHE_FILE, 'r') as f:
+        with open(PLAYLIST_ID_CACHE_FILE, "r") as f:
             data = json.load(f)
         return data if isinstance(data, dict) else {}
     except Exception:
         return {}
 
+
 def _save_playlist_id_cache(cache):
     """Persist the {playlist_name: playlist_id} cache to disk (atomic write)."""
     import json
-    tmp = PLAYLIST_ID_CACHE_FILE + '.tmp'
-    with open(tmp, 'w') as f:
+
+    tmp = PLAYLIST_ID_CACHE_FILE + ".tmp"
+    with open(tmp, "w") as f:
         json.dump(cache, f)
     os.replace(tmp, PLAYLIST_ID_CACHE_FILE)
+
 
 def get_playlist_id(youtube, name="Automated Watch Later"):
     """
@@ -1059,17 +1176,18 @@ def get_playlist_id(youtube, name="Automated Watch Later"):
     if cached_id:
         # Validate the cached ID with a cheap API call
         try:
-            resp = youtube.playlists().list(
-                part="id",
-                id=cached_id
-            ).execute()
-            if resp.get('items'):
+            resp = youtube.playlists().list(part="id", id=cached_id).execute()
+            if resp.get("items"):
                 log_print(f"Using cached playlist ID for '{name}': {cached_id}")
                 return cached_id
             else:
-                log_print(f"Cached playlist ID for '{name}' no longer valid. Scanning for playlist...")
+                log_print(
+                    f"Cached playlist ID for '{name}' no longer valid. Scanning for playlist..."
+                )
         except Exception:
-            log_print(f"Could not validate cached playlist ID for '{name}'. Scanning for playlist...")
+            log_print(
+                f"Could not validate cached playlist ID for '{name}'. Scanning for playlist..."
+            )
 
     # Cache miss or invalid — fetch from API and cache the result
     playlist_id = _fetch_or_create_playlist(youtube, name)
@@ -1077,6 +1195,7 @@ def get_playlist_id(youtube, name="Automated Watch Later"):
     _save_playlist_id_cache(cache)
     log_print(f"Playlist ID for '{name}' cached to {PLAYLIST_ID_CACHE_FILE}.")
     return playlist_id
+
 
 def fetch_playlist_video_ids(youtube, playlist_id):
     """
@@ -1097,16 +1216,14 @@ def fetch_playlist_video_ids(youtube, playlist_id):
     """
     video_ids = set()
     request = youtube.playlistItems().list(
-        part="contentDetails",
-        playlistId=playlist_id,
-        maxResults=50
+        part="contentDetails", playlistId=playlist_id, maxResults=50
     )
     while request:
         try:
             response = request.execute()
             quota.track(ENDPOINT_PLAYLIST_ITEMS_LIST)
-            for item in response.get('items', []):
-                video_ids.add(item['contentDetails']['videoId'])
+            for item in response.get("items", []):
+                video_ids.add(item["contentDetails"]["videoId"])
             request = youtube.playlistItems().list_next(request, response)
         except Exception as e:
             error_msg = str(e)
@@ -1118,6 +1235,7 @@ def fetch_playlist_video_ids(youtube, playlist_id):
 
     log_print(f"Loaded {len(video_ids)} existing video IDs from playlist.")
     return video_ids
+
 
 def add_to_watch_later(youtube, videos, playlist_id):
     """
@@ -1152,7 +1270,7 @@ def add_to_watch_later(youtube, videos, playlist_id):
     remaining = list(videos)
 
     for video in videos:
-        video_id = video['id']
+        video_id = video["id"]
         try:
             # Local duplicate check — no API call needed
             if video_id in existing_ids:
@@ -1167,14 +1285,11 @@ def add_to_watch_later(youtube, videos, playlist_id):
                 body={
                     "snippet": {
                         "playlistId": playlist_id,
-                        "resourceId": {
-                            "kind": "youtube#video",
-                            "videoId": video_id
-                        }
+                        "resourceId": {"kind": "youtube#video", "videoId": video_id},
                     }
-                }
+                },
             ).execute()
-            quota.track('playlistItems.insert')
+            quota.track("playlistItems.insert")
 
             added_count += 1
             existing_ids.add(video_id)  # keep in-memory set consistent
@@ -1187,18 +1302,27 @@ def add_to_watch_later(youtube, videos, playlist_id):
         except Exception as e:
             error_msg = str(e)
             if "quotaExceeded" in error_msg:
-                log_print("Quota exceeded while adding videos. Remaining videos will be saved by caller.")
+                log_print(
+                    "Quota exceeded while adding videos. Remaining videos will be saved by caller."
+                )
                 raise QuotaExceededException()
             elif "videoNotFound" in error_msg or "notFound" in error_msg:
-                log_print(f"Video {video_id} may have been removed or is not accessible.")
+                log_print(
+                    f"Video {video_id} may have been removed or is not accessible."
+                )
                 remaining.remove(video)
             elif "playlistForbidden" in error_msg or "forbidden" in error_msg.lower():
-                log_print("Access to playlist is restricted. Make sure you've granted the proper permissions.")
+                log_print(
+                    "Access to playlist is restricted. Make sure you've granted the proper permissions."
+                )
             else:
                 log_print(f"Failed to add video {video_id}: {error_msg}")
 
-    log_print(f"Summary: Added {added_count} videos, {already_in_playlist_count} already in playlist.")
+    log_print(
+        f"Summary: Added {added_count} videos, {already_in_playlist_count} already in playlist."
+    )
     return added_count, remaining
+
 
 def add_videos_to_playlists(youtube, videos, main_playlist_id, shorts_playlist_id):
     """
@@ -1223,8 +1347,8 @@ def add_videos_to_playlists(youtube, videos, main_playlist_id, shorts_playlist_i
     Raises QuotaExceededException if the API quota is hit.
     """
     if shorts_playlist_id:
-        shorts_videos = [v for v in videos if v.get('is_short')]
-        main_videos = [v for v in videos if not v.get('is_short')]
+        shorts_videos = [v for v in videos if v.get("is_short")]
+        main_videos = [v for v in videos if not v.get("is_short")]
     else:
         shorts_videos = []
         main_videos = list(videos)
@@ -1238,15 +1362,13 @@ def add_videos_to_playlists(youtube, videos, main_playlist_id, shorts_playlist_i
         remaining.extend(rem)
     return remaining
 
+
 def check_quota_usage(youtube):
     """Check the current quota usage for the YouTube API."""
     try:
         # Make a minimal API call to check if quota is exceeded
-        youtube.channels().list(
-            part="id",
-            mine=True
-        ).execute()
-        quota.track('channels.list')
+        youtube.channels().list(part="id", mine=True).execute()
+        quota.track("channels.list")
         log_print("YouTube API quota is available.")
         return True
     except Exception as e:
@@ -1257,6 +1379,7 @@ def check_quota_usage(youtube):
         else:
             log_print(f"Error checking quota: {str(e)}")
             return True  # Assume quota is available if error is not quota-related
+
 
 def main():
     # Setup logging
@@ -1270,7 +1393,9 @@ def main():
         # Check quota status before doing anything
         quota_available = check_quota_usage(youtube)
         if not quota_available:
-            log_print("Quota exceeded. Cannot proceed. Quota resets at midnight Pacific Time.")
+            log_print(
+                "Quota exceeded. Cannot proceed. Quota resets at midnight Pacific Time."
+            )
             return
 
         # Get or create the watch later playlist (cached after first run)
@@ -1280,12 +1405,14 @@ def main():
         # Get or create the dedicated Shorts playlist only when enabled
         shorts_playlist_id = None
         if SHORT_PLAYLIST:
-            shorts_playlist_id = get_playlist_id(youtube, "Automated Watch Later Shorts")
+            shorts_playlist_id = get_playlist_id(
+                youtube, "Automated Watch Later Shorts"
+            )
             log_print(f"Using Shorts playlist ID: {shorts_playlist_id}")
 
         # In-memory state — only written to disk on quota exceeded
-        pending_videos = []   # videos found but not yet added
-        scan_state = None     # current scan position + shorts cache
+        pending_videos = []  # videos found but not yet added
+        scan_state = None  # current scan position + shorts cache
 
         try:
             # --- Resume from previous quota-exceeded run if applicable ---
@@ -1293,8 +1420,12 @@ def main():
             saved_progress = load_scan_progress()
 
             if saved_pending:
-                log_print(f"\nResuming: adding {len(saved_pending)} pending videos from previous run...")
-                remaining = add_videos_to_playlists(youtube, saved_pending, playlist_id, shorts_playlist_id)
+                log_print(
+                    f"\nResuming: adding {len(saved_pending)} pending videos from previous run..."
+                )
+                remaining = add_videos_to_playlists(
+                    youtube, saved_pending, playlist_id, shorts_playlist_id
+                )
                 if not remaining:
                     clear_pending_videos()
                     log_print("All pending videos processed. Proceeding with new scan.")
@@ -1305,8 +1436,7 @@ def main():
             last_check_time = get_last_check_time()
 
             new_videos, scan_state = get_new_videos_with_shorts_filtering(
-                youtube, channel_ids, last_check_time,
-                resume_progress=saved_progress
+                youtube, channel_ids, last_check_time, resume_progress=saved_progress
             )
 
             if new_videos:
@@ -1315,8 +1445,10 @@ def main():
                     log_print(f"{i+1}. {video['title']} - {video['channel']}")
 
                 pending_videos = new_videos  # track in memory before adding
-                remaining = add_videos_to_playlists(youtube, new_videos, playlist_id, shorts_playlist_id)
-                pending_videos = remaining   # update to only what's left
+                remaining = add_videos_to_playlists(
+                    youtube, new_videos, playlist_id, shorts_playlist_id
+                )
+                pending_videos = remaining  # update to only what's left
 
             else:
                 log_print("No new videos found since last check.")
@@ -1332,12 +1464,20 @@ def main():
             log_print("\nYouTube API quota exceeded during execution.")
             if pending_videos:
                 save_pending_videos(pending_videos)
-                log_print(f"Saved {len(pending_videos)} pending videos to {PENDING_VIDEOS_FILE}.")
+                log_print(
+                    f"Saved {len(pending_videos)} pending videos to {PENDING_VIDEOS_FILE}."
+                )
             if scan_state:
-                save_scan_progress(scan_state['last_channel_index'], scan_state['shorts_cache'])
-                log_print(f"Saved scan progress at channel {scan_state['last_channel_index']}.")
+                save_scan_progress(
+                    scan_state["last_channel_index"], scan_state["shorts_cache"]
+                )
+                log_print(
+                    f"Saved scan progress at channel {scan_state['last_channel_index']}."
+                )
             log_print("The next run will resume exactly where this one stopped.")
-            log_print("last_check_time has NOT been updated — no videos will be missed.")
+            log_print(
+                "last_check_time has NOT been updated — no videos will be missed."
+            )
             log_print("Quota resets at midnight Pacific Time.")
 
         except Exception as e:
@@ -1347,5 +1487,6 @@ def main():
         quota.report()
         cleanup_logging()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

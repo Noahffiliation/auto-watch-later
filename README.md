@@ -80,10 +80,10 @@ The YouTube Data API v3 has a daily limit of 10,000 units. The script logs quota
 
 ```
 === API Quota consumed ===
-  playlistItems.insert: 53× (50 unit/call) = 2650 units 
-  activities.list: 355× (1 unit/call) = 355 units 
-  playlistItems.list: 265× (1 unit/call) = 265 units 
-  channels.list: 1× (1 unit/call) = 1 units 
+  playlistItems.insert: 53× (50 unit/call) = 2650 units
+  activities.list: 355× (1 unit/call) = 355 units
+  playlistItems.list: 265× (1 unit/call) = 265 units
+  channels.list: 1× (1 unit/call) = 1 units
   Total : 3271 / 10000 units  (32.7% of daily quota)
 ```
 
