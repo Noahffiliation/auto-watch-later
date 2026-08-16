@@ -12,6 +12,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+  security-events: write
+
 jobs:
   security-scan:
     uses: Noahffiliation/.github/.github/workflows/reusable-codeql.yml@main

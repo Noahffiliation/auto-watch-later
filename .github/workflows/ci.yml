@@ -20,6 +20,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
+permissions:
+  contents: read
+  security-events: write
+
 jobs:
   python-ci:
     uses: Noahffiliation/.github/.github/workflows/reusable-python-ci.yml@main
