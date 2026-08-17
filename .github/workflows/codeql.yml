@@ -18,6 +18,9 @@ permissions:
 
 jobs:
   security-scan:
+    permissions:
+      contents: read
+      security-events: write
     uses: Noahffiliation/.github/.github/workflows/reusable-codeql.yml@main
     with:
       language: "python"

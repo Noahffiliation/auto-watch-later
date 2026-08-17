@@ -27,6 +27,10 @@ permissions:
 
 jobs:
   python-ci:
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
     uses: Noahffiliation/.github/.github/workflows/reusable-python-ci.yml@main
     with:
       python-version: "3.12.3"
