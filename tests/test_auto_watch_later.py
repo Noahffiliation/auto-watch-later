@@ -1,9 +1,10 @@
-import pytest
-from unittest.mock import MagicMock, mock_open
-import sys
-import os
 import datetime
+import os
 import pickle
+import sys
+from unittest.mock import MagicMock, mock_open
+
+import pytest
 
 # Add the parent directory to sys.path so we can import the module
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -273,9 +274,7 @@ def test_fetch_or_create_playlist_new(mock_youtube_client):
 
 def test_get_playlist_id_cached_valid(mock_youtube_client, mocker):
     mocker.patch("os.path.exists", return_value=True)
-    mocker.patch(
-        "builtins.open", mock_open(read_data='{"Automated Watch Later": "PL_CACHED"}')
-    )
+    mocker.patch("builtins.open", mock_open(read_data='{"Automated Watch Later": "PL_CACHED"}'))
 
     mock_list_request = MagicMock()
     mock_youtube_client.playlists().list.return_value = mock_list_request
@@ -322,9 +321,7 @@ def test_add_to_watch_later(mock_youtube_client, mocker):
     mock_list_request = MagicMock()
     mock_youtube_client.playlistItems().list.return_value = mock_list_request
     # Mock existing items in the playlist (only v2 is in the playlist)
-    mock_list_request.execute.return_value = {
-        "items": [{"contentDetails": {"videoId": "v2"}}]
-    }
+    mock_list_request.execute.return_value = {"items": [{"contentDetails": {"videoId": "v2"}}]}
     # Mock list_next to return None to prevent infinite loop
     mock_youtube_client.playlistItems().list_next.return_value = None
 
@@ -345,9 +342,7 @@ def test_check_quota_usage(mock_youtube_client):
     assert auto_watch_later.check_quota_usage(mock_youtube_client) is True
 
     # Case 2: Quota exceeded
-    mock_youtube_client.channels().list().execute.side_effect = Exception(
-        "quotaExceeded"
-    )
+    mock_youtube_client.channels().list().execute.side_effect = Exception("quotaExceeded")
     assert auto_watch_later.check_quota_usage(mock_youtube_client) is False
 
 
@@ -356,7 +351,7 @@ def test_process_playlist_item(mocker):
     import datetime
 
     # Use timezone-aware datetime for comparison
-    cutoff = datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc)
+    cutoff = datetime.datetime(2025, 1, 1, tzinfo=datetime.UTC)
 
     # Recent video
     item_recent = {
@@ -375,9 +370,7 @@ def test_process_playlist_item(mocker):
 
 def test_build_shorts_cache_for_channels(mock_youtube_client, mocker):
     # Mock the helper directly to avoid complex mocking of get_channel_shorts_video_ids internals again
-    mocker.patch(
-        "auto_watch_later.get_channel_shorts_video_ids", side_effect=[{"s1"}, {"s2"}]
-    )
+    mocker.patch("auto_watch_later.get_channel_shorts_video_ids", side_effect=[{"s1"}, {"s2"}])
 
     cache = auto_watch_later.build_shorts_cache_for_channels(
         mock_youtube_client, ["c1", "c2"], "2025-01-01Z"
@@ -413,29 +406,13 @@ def test_process_channel_batch(mock_youtube_client, mocker):
 
 def test_get_channel_videos(mock_youtube_client, mocker):
     # Case 1: Activities works
-    mocker.patch(
-        "auto_watch_later.get_videos_from_activities", return_value=[{"id": "v1"}]
-    )
-    assert (
-        len(
-            auto_watch_later.get_channel_videos(
-                mock_youtube_client, "c1", "date", set()
-            )
-        )
-        == 1
-    )
+    mocker.patch("auto_watch_later.get_videos_from_activities", return_value=[{"id": "v1"}])
+    assert len(auto_watch_later.get_channel_videos(mock_youtube_client, "c1", "date", set())) == 1
 
     # Case 2: Activities fails (returns None), Search works
     mocker.patch("auto_watch_later.get_videos_from_activities", return_value=None)
     mocker.patch("auto_watch_later.get_videos_from_search", return_value=[{"id": "v2"}])
-    assert (
-        len(
-            auto_watch_later.get_channel_videos(
-                mock_youtube_client, "c1", "date", set()
-            )
-        )
-        == 1
-    )
+    assert len(auto_watch_later.get_channel_videos(mock_youtube_client, "c1", "date", set())) == 1
 
 
 # Credentials tests
@@ -580,9 +557,7 @@ def test_get_credentials_device_flow_pending_then_success(mocker):
         b'{"access_token": "token123", "refresh_token": "refresh123"}'
     )
 
-    mocker.patch(
-        "urllib.request.urlopen", side_effect=[mock_response1, err, mock_response2]
-    )
+    mocker.patch("urllib.request.urlopen", side_effect=[mock_response1, err, mock_response2])
     mocker.patch("time.sleep")
 
     creds = auto_watch_later._get_credentials_device_flow("id", "secret")
@@ -605,9 +580,7 @@ def test_get_credentials_device_flow_slow_down_then_success(mocker):
         b'{"access_token": "token123", "refresh_token": "refresh123"}'
     )
 
-    mocker.patch(
-        "urllib.request.urlopen", side_effect=[mock_response1, err, mock_response2]
-    )
+    mocker.patch("urllib.request.urlopen", side_effect=[mock_response1, err, mock_response2])
     mocker.patch("time.sleep")
 
     creds = auto_watch_later._get_credentials_device_flow("id", "secret")
@@ -634,25 +607,17 @@ def test_get_credentials_device_flow_other_error(mocker):
 
 
 def test_get_new_credentials_browser(mocker):
-    mocker.patch(
-        "auto_watch_later._get_client_credentials", return_value=("id", "secret")
-    )
+    mocker.patch("auto_watch_later._get_client_credentials", return_value=("id", "secret"))
     mocker.patch("auto_watch_later._has_browser", return_value=True)
-    mocker.patch(
-        "auto_watch_later._get_credentials_browser_flow", return_value="browser_creds"
-    )
+    mocker.patch("auto_watch_later._get_credentials_browser_flow", return_value="browser_creds")
 
     assert auto_watch_later.get_new_credentials() == "browser_creds"
 
 
 def test_get_new_credentials_device(mocker):
-    mocker.patch(
-        "auto_watch_later._get_client_credentials", return_value=("id", "secret")
-    )
+    mocker.patch("auto_watch_later._get_client_credentials", return_value=("id", "secret"))
     mocker.patch("auto_watch_later._has_browser", return_value=False)
-    mocker.patch(
-        "auto_watch_later._get_credentials_device_flow", return_value="device_creds"
-    )
+    mocker.patch("auto_watch_later._get_credentials_device_flow", return_value="device_creds")
 
     assert auto_watch_later.get_new_credentials() == "device_creds"
 
@@ -740,9 +705,7 @@ def test_get_authenticated_service_refresh_fail(mocker):
     mock_creds.refresh.side_effect = RefreshError("Fail")
 
     mocker.patch("auto_watch_later.load_credentials", return_value=mock_creds)
-    mocker.patch(
-        "auto_watch_later.handle_refresh_error", return_value=None
-    )  # Clears creds
+    mocker.patch("auto_watch_later.handle_refresh_error", return_value=None)  # Clears creds
     mocker.patch("auto_watch_later.get_new_credentials", return_value="new_creds")
     mocker.patch("auto_watch_later.save_credentials")
     mocker.patch("auto_watch_later.build")
@@ -790,7 +753,7 @@ def test_subscriptions_cache_loading_and_saving(mocker):
     import json
 
     cached_data = {
-        "cached_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "cached_at": datetime.datetime.now(datetime.UTC).isoformat(),
         "channel_ids": ["c1", "c2"],
     }
     mocker.patch("builtins.open", mock_open(read_data=json.dumps(cached_data)))
@@ -799,7 +762,7 @@ def test_subscriptions_cache_loading_and_saving(mocker):
     # 2. Loading expired cache
     expired_cached_data = {
         "cached_at": (
-            datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=25)
+            datetime.datetime.now(datetime.UTC) - datetime.timedelta(hours=25)
         ).isoformat(),
         "channel_ids": ["c1", "c2"],
     }
@@ -832,17 +795,13 @@ def test_fetch_subscriptions_from_api(mock_youtube_client):
 
 def test_get_subscriptions_force_refresh(mock_youtube_client, mocker):
     mocker.patch("auto_watch_later.load_subscriptions_cache", return_value=["c_cached"])
-    mocker.patch(
-        "auto_watch_later.fetch_subscriptions_from_api", return_value=["c_api"]
-    )
+    mocker.patch("auto_watch_later.fetch_subscriptions_from_api", return_value=["c_api"])
     mocker.patch("auto_watch_later.save_subscriptions_cache")
 
     subs = auto_watch_later.get_subscriptions(mock_youtube_client, force_refresh=True)
     assert subs == ["c_api"]
 
-    subs_cached = auto_watch_later.get_subscriptions(
-        mock_youtube_client, force_refresh=False
-    )
+    subs_cached = auto_watch_later.get_subscriptions(mock_youtube_client, force_refresh=False)
     assert subs_cached == ["c_cached"]
 
 
@@ -861,9 +820,7 @@ def test_pending_videos_io(mocker):
     mocker.patch("builtins.open", mock_open_func)
     mocker.patch("os.replace")
     auto_watch_later.save_pending_videos([{"id": "v1"}])
-    mock_open_func.assert_called_with(
-        auto_watch_later.PENDING_VIDEOS_FILE + ".tmp", "w"
-    )
+    mock_open_func.assert_called_with(auto_watch_later.PENDING_VIDEOS_FILE + ".tmp", "w")
 
     # 4. clear_pending_videos
     mocker.patch("os.path.exists", return_value=True)
@@ -913,7 +870,7 @@ def test_fetch_playlist_page_cases(mock_youtube_client):
             }
         ]
     }
-    cutoff = datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc)
+    cutoff = datetime.datetime(2025, 1, 1, tzinfo=datetime.UTC)
     shorts = set()
     res = auto_watch_later.fetch_playlist_page(
         mock_youtube_client, mock_request, cutoff, shorts, 50
@@ -924,9 +881,7 @@ def test_fetch_playlist_page_cases(mock_youtube_client):
     # Case: quota error exception
     mock_request.execute.side_effect = Exception("quotaExceeded")
     with pytest.raises(auto_watch_later.QuotaExceededException):
-        auto_watch_later.fetch_playlist_page(
-            mock_youtube_client, mock_request, cutoff, shorts, 50
-        )
+        auto_watch_later.fetch_playlist_page(mock_youtube_client, mock_request, cutoff, shorts, 50)
 
     # Case: forbidden error exception -> should return None
     mock_request.execute.side_effect = Exception("forbidden")
@@ -944,23 +899,15 @@ def test_get_channel_shorts_video_ids_cases(mock_youtube_client, mocker):
     assert res == set()
 
     # Exception handling
-    mocker.patch(
-        "auto_watch_later.get_channel_shorts_playlist_id", return_value="UUSH123"
-    )
+    mocker.patch("auto_watch_later.get_channel_shorts_playlist_id", return_value="UUSH123")
     mock_youtube_client.playlistItems().list.side_effect = Exception("General Error")
-    res = auto_watch_later.get_channel_shorts_video_ids(
-        mock_youtube_client, "UC123", "2025-01-01Z"
-    )
+    res = auto_watch_later.get_channel_shorts_video_ids(mock_youtube_client, "UC123", "2025-01-01Z")
     assert res == set()
 
     # QuotaExceededException handling
-    mock_youtube_client.playlistItems().list.side_effect = (
-        auto_watch_later.QuotaExceededException()
-    )
+    mock_youtube_client.playlistItems().list.side_effect = auto_watch_later.QuotaExceededException()
     with pytest.raises(auto_watch_later.QuotaExceededException):
-        auto_watch_later.get_channel_shorts_video_ids(
-            mock_youtube_client, "UC123", "2025-01-01Z"
-        )
+        auto_watch_later.get_channel_shorts_video_ids(mock_youtube_client, "UC123", "2025-01-01Z")
 
 
 def test_build_shorts_cache_for_channels_cases(mock_youtube_client, mocker):
@@ -1019,9 +966,7 @@ def test_filter_videos_short_playlist(mocker):
 
 def test_get_videos_from_activities_exception(mock_youtube_client):
     # Quota exceeded exception
-    mock_youtube_client.activities().list().execute.side_effect = Exception(
-        "quotaExceeded"
-    )
+    mock_youtube_client.activities().list().execute.side_effect = Exception("quotaExceeded")
     with pytest.raises(auto_watch_later.QuotaExceededException):
         auto_watch_later.get_videos_from_activities(
             mock_youtube_client, "UC123", "2025-01-01Z", set()
@@ -1045,9 +990,7 @@ def test_get_videos_from_search_cases(mock_youtube_client):
     # Quota exceeded exception
     mock_youtube_client.search().list().execute.side_effect = Exception("quotaExceeded")
     with pytest.raises(auto_watch_later.QuotaExceededException):
-        auto_watch_later.get_videos_from_search(
-            mock_youtube_client, "UC123", "2025-01-01Z", set()
-        )
+        auto_watch_later.get_videos_from_search(mock_youtube_client, "UC123", "2025-01-01Z", set())
 
     # Other exception
     mock_youtube_client.search().list().execute.side_effect = Exception("other")
@@ -1069,9 +1012,7 @@ def test_get_new_videos_with_shorts_filtering_resume(mock_youtube_client, mocker
 
 def test_get_playlist_id_validation_exception(mock_youtube_client, mocker):
     mocker.patch("os.path.exists", return_value=True)
-    mocker.patch(
-        "builtins.open", mock_open(read_data='{"Automated Watch Later": "PL_CACHED"}')
-    )
+    mocker.patch("builtins.open", mock_open(read_data='{"Automated Watch Later": "PL_CACHED"}'))
     mocker.patch("os.replace")
 
     # Exception during validation list()
@@ -1084,9 +1025,7 @@ def test_get_playlist_id_validation_exception(mock_youtube_client, mocker):
 
 def test_fetch_playlist_video_ids_exception(mock_youtube_client):
     # Quota exceeded exception
-    mock_youtube_client.playlistItems().list().execute.side_effect = Exception(
-        "quotaExceeded"
-    )
+    mock_youtube_client.playlistItems().list().execute.side_effect = Exception("quotaExceeded")
     with pytest.raises(auto_watch_later.QuotaExceededException):
         auto_watch_later.fetch_playlist_video_ids(mock_youtube_client, "PL123")
 
@@ -1101,18 +1040,12 @@ def test_add_to_watch_later_exceptions(mock_youtube_client, mocker):
     mocker.patch("auto_watch_later.fetch_playlist_video_ids", return_value=set())
 
     # 1. QuotaExceededException
-    mock_youtube_client.playlistItems().insert().execute.side_effect = Exception(
-        "quotaExceeded"
-    )
+    mock_youtube_client.playlistItems().insert().execute.side_effect = Exception("quotaExceeded")
     with pytest.raises(auto_watch_later.QuotaExceededException):
-        auto_watch_later.add_to_watch_later(
-            mock_youtube_client, [{"id": "v1"}], "PL123"
-        )
+        auto_watch_later.add_to_watch_later(mock_youtube_client, [{"id": "v1"}], "PL123")
 
     # 2. videoNotFound exception (should just remove and continue)
-    mock_youtube_client.playlistItems().insert().execute.side_effect = Exception(
-        "videoNotFound"
-    )
+    mock_youtube_client.playlistItems().insert().execute.side_effect = Exception("videoNotFound")
     added, remaining = auto_watch_later.add_to_watch_later(
         mock_youtube_client, [{"id": "v1"}], "PL123"
     )
@@ -1132,9 +1065,7 @@ def test_add_to_watch_later_exceptions(mock_youtube_client, mocker):
 
 def test_check_quota_usage_other_exception(mock_youtube_client):
     # Non-quota exception -> should return True
-    mock_youtube_client.channels().list().execute.side_effect = Exception(
-        "Other random error"
-    )
+    mock_youtube_client.channels().list().execute.side_effect = Exception("Other random error")
     assert auto_watch_later.check_quota_usage(mock_youtube_client) is True
 
 
@@ -1148,9 +1079,7 @@ def test_main_resume_and_exception_paths(mocker):
     mocker.patch("auto_watch_later.get_last_check_time", return_value="time")
 
     # Mock resume scenario
-    mocker.patch(
-        "auto_watch_later.load_pending_videos", return_value=[{"id": "v_pending"}]
-    )
+    mocker.patch("auto_watch_later.load_pending_videos", return_value=[{"id": "v_pending"}])
     mocker.patch(
         "auto_watch_later.load_scan_progress",
         return_value={"last_channel_index": 0, "shorts_cache": []},
@@ -1197,24 +1126,19 @@ def test_load_cache_files_not_found(mocker):
 
 
 def test_fetch_playlist_page_edges(mock_youtube_client, mocker):
-    cutoff = datetime.datetime.now(datetime.timezone.utc)
+    cutoff = datetime.datetime.now(datetime.UTC)
     shorts = set()
 
     # None request
     assert (
-        auto_watch_later.fetch_playlist_page(
-            mock_youtube_client, None, cutoff, shorts, 50
-        )
-        is None
+        auto_watch_later.fetch_playlist_page(mock_youtube_client, None, cutoff, shorts, 50) is None
     )
 
     # Normal request with generic exception
     mock_req = MagicMock()
     mock_req.execute.side_effect = Exception("network glitch")
     assert (
-        auto_watch_later.fetch_playlist_page(
-            mock_youtube_client, mock_req, cutoff, shorts, 50
-        )
+        auto_watch_later.fetch_playlist_page(mock_youtube_client, mock_req, cutoff, shorts, 50)
         is None
     )
 
@@ -1230,9 +1154,7 @@ def test_fetch_playlist_page_edges(mock_youtube_client, mocker):
         ]
     }
     assert (
-        auto_watch_later.fetch_playlist_page(
-            mock_youtube_client, mock_req_old, cutoff, shorts, 50
-        )
+        auto_watch_later.fetch_playlist_page(mock_youtube_client, mock_req_old, cutoff, shorts, 50)
         is None
     )
 
@@ -1310,15 +1232,11 @@ def test_main_quota_exceeded_with_pending_and_scan_state(mocker):
 
     auto_watch_later.main()
 
-    mock_save_pending.assert_called_once_with(
-        [{"id": "p1", "title": "T1", "channel": "C1"}]
-    )
+    mock_save_pending.assert_called_once_with([{"id": "p1", "title": "T1", "channel": "C1"}])
     mock_save_scan.assert_called_once_with(2, ["s1"])
 
 
-def test_scan_channels_with_short_playlist_filter(
-    mock_youtube_client, mocker, monkeypatch
-):
+def test_scan_channels_with_short_playlist_filter(mock_youtube_client, mocker, monkeypatch):
     monkeypatch.setattr(auto_watch_later, "SHORT_PLAYLIST", True)
     monkeypatch.setattr(auto_watch_later, "INCLUDE_TEASERS", False)
     mocker.patch("auto_watch_later.build_shorts_cache_for_channels", return_value=set())
@@ -1343,9 +1261,7 @@ def test_add_videos_to_playlists_with_shorts_playlist(mock_youtube_client, mocke
         {"id": "v_short", "title": "Short", "channel": "C", "is_short": True},
         {"id": "v_main", "title": "Normal", "channel": "C"},
     ]
-    mock_add = mocker.patch(
-        "auto_watch_later.add_to_watch_later", side_effect=[(1, []), (1, [])]
-    )
+    mock_add = mocker.patch("auto_watch_later.add_to_watch_later", side_effect=[(1, []), (1, [])])
 
     remaining = auto_watch_later.add_videos_to_playlists(
         mock_youtube_client, videos, "PL_MAIN", "PL_SHORTS"
@@ -1374,9 +1290,7 @@ def test_main_short_playlist_enabled(mocker, monkeypatch):
         "auto_watch_later.get_playlist_id", side_effect=["PL_MAIN", "PL_SHORTS"]
     )
     mocker.patch("auto_watch_later.get_subscriptions", return_value=[])
-    mocker.patch(
-        "auto_watch_later.get_last_check_time", return_value="2026-01-01T00:00:00Z"
-    )
+    mocker.patch("auto_watch_later.get_last_check_time", return_value="2026-01-01T00:00:00Z")
     mocker.patch("auto_watch_later.load_pending_videos", return_value=[])
     mocker.patch("auto_watch_later.load_scan_progress", return_value=None)
     mocker.patch("auto_watch_later.save_check_time")

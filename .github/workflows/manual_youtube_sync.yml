@@ -21,12 +21,12 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v7.0.1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Python
-        uses: actions/setup-python@v5.4.0
+        uses: actions/setup-python@v7.0.0
         with:
           python-version: '3.12.3'
           cache: 'pip'
@@ -52,7 +52,7 @@ jobs:
           git diff --quiet && git diff --staged --quiet || (git commit -m "Update last check time [skip ci]" && git push)
 
       - name: Upload Logs
-        uses: actions/upload-artifact@v4.6.1
+        uses: actions/upload-artifact@v7.0.1
         if: always()
         with:
           name: youtube-sync-logs
