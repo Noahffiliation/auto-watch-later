@@ -33,15 +33,17 @@ Setup (two modes):
 The script detects automatically which mode to use based on browser availability.
 """
 
+import datetime
 import os
 import pickle
-import datetime
-import time
 import sys
-from googleapiclient.discovery import build
-from google_auth_oauthlib.flow import InstalledAppFlow
-from google.auth.transport.requests import Request
+import time
+from typing import ClassVar
+
 from google.auth.exceptions import RefreshError
+from google.auth.transport.requests import Request
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.discovery import build
 
 # If modifying these SCOPES, delete the file token.pickle.
 # Note: youtube.force-ssl is intentionally omitted — it is incompatible with the
@@ -50,6 +52,10 @@ SCOPES = [
     "https://www.googleapis.com/auth/youtube.readonly",
     "https://www.googleapis.com/auth/youtube",
 ]
+
+GOOGLE_AUTH_URI = "https://accounts.google.com/o/oauth2/auth"
+GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
+GOOGLE_DEVICE_CODE_URI = "https://oauth2.googleapis.com/device/code"
 
 # File to store the last check time
 LAST_CHECK_FILE = "last_check_time.txt"
@@ -121,7 +127,7 @@ class QuotaTracker:
     Daily limit: 10,000 units.
     """
 
-    COSTS = {
+    COSTS: ClassVar[dict[str, int]] = {
         "subscriptions.list": 1,
         "activities.list": 1,
         ENDPOINT_PLAYLIST_ITEMS_LIST: 1,
@@ -150,16 +156,12 @@ class QuotaTracker:
     def report(self):
         """Log a summary of quota consumed during this run."""
         log_print("\n=== API Quota consumed ===")
-        for ep, count in sorted(
-            self._calls.items(), key=lambda x: -x[1] * self.COSTS.get(x[0], 1)
-        ):
+        for ep, count in sorted(self._calls.items(), key=lambda x: -x[1] * self.COSTS.get(x[0], 1)):
             unit = self.COSTS.get(ep, 1)
             total_cost = count * unit
             log_print(f"  {ep}: {count}× ({unit} unit/call) = {total_cost} units")
         pct = round(self._total / self.DAILY_LIMIT * 100, 1)
-        log_print(
-            f"  Total: {self._total} / {self.DAILY_LIMIT} units ({pct}% of daily quota)"
-        )
+        log_print(f"  Total: {self._total} / {self.DAILY_LIMIT} units ({pct}% of daily quota)")
         if self._total > self.DAILY_LIMIT * 0.8:
             log_print("  WARNING: more than 80% of the daily quota consumed.")
         log_print("")
@@ -170,8 +172,6 @@ quota = QuotaTracker()
 
 class QuotaExceededException(Exception):
     """Raised when the YouTube API quota is exceeded."""
-
-    pass
 
 
 def setup_logging():
@@ -192,9 +192,7 @@ def setup_logging():
     log_file = open(log_path, "w", encoding="utf-8")
 
     # Write header to log file
-    log_file.write(
-        f"YouTube Auto-Adder Log - {current_time.strftime('%Y-%m-%d %H:%M:%S')}\n"
-    )
+    log_file.write(f"YouTube Auto-Adder Log - {current_time.strftime('%Y-%m-%d %H:%M:%S')}\n")
     log_file.write("=" * 50 + "\n\n")
     log_file.flush()
 
@@ -203,7 +201,6 @@ def setup_logging():
 
 def log_print(message):
     """Print message to console and write to log file."""
-    global log_file
     print(message)
     if log_file:
         log_file.write(message + "\n")
@@ -212,7 +209,6 @@ def log_print(message):
 
 def cleanup_logging():
     """Close log file."""
-    global log_file
     if log_file:
         log_file.close()
 
@@ -231,7 +227,6 @@ def handle_refresh_error(token_file):
     if os.path.exists(token_file):
         os.remove(token_file)
         log_print("Deleted invalid token file.")
-    return None
 
 
 def _has_browser():
@@ -276,24 +271,22 @@ def _get_client_credentials():
         return cfg["client_id"], cfg["client_secret"]
 
     log_print("ERROR: No OAuth credentials found.")
-    log_print(
-        "Provide YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET environment variables,"
-    )
+    log_print("Provide YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET environment variables,")
     log_print("or place a client_secrets.json file in the working directory.")
     sys.exit(1)
 
 
 def _get_credentials_browser_flow(client_id, client_secret):
-    """
-    Authenticate via browser (Desktop/PC mode).
+    """Authenticate via browser (Desktop/PC mode).
+
     Opens a local browser window and handles the OAuth redirect automatically.
     """
     config = {
         "installed": {
             "client_id": client_id,
             "client_secret": client_secret,
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token",
+            "auth_uri": GOOGLE_AUTH_URI,
+            "token_uri": GOOGLE_TOKEN_URI,
             "redirect_uris": ["http://localhost"],
         }
     }
@@ -302,19 +295,17 @@ def _get_credentials_browser_flow(client_id, client_secret):
 
 
 def _get_credentials_device_flow(client_id, client_secret):
-    """
-    Authenticate via Device Flow (headless/Docker/server mode).
+    """Authenticate via Device Flow (headless/Docker/server mode).
+
     Displays a short URL and user code — validate from any device, no interaction needed here.
     """
     import json
-    import urllib.request
     import urllib.parse
+    import urllib.request
 
     # Step 1: Request device code and user code
-    data = urllib.parse.urlencode(
-        {"client_id": client_id, "scope": " ".join(SCOPES)}
-    ).encode()
-    req = urllib.request.Request("https://oauth2.googleapis.com/device/code", data=data)
+    data = urllib.parse.urlencode({"client_id": client_id, "scope": " ".join(SCOPES)}).encode()
+    req = urllib.request.Request(GOOGLE_DEVICE_CODE_URI, data=data)
     response = json.loads(urllib.request.urlopen(req).read())
 
     device_code = response["device_code"]
@@ -338,9 +329,7 @@ def _get_credentials_device_flow(client_id, client_secret):
         ).encode()
 
         try:
-            poll_req = urllib.request.Request(
-                "https://oauth2.googleapis.com/token", data=poll_data
-            )
+            poll_req = urllib.request.Request(GOOGLE_TOKEN_URI, data=poll_data)
             token_response = json.loads(urllib.request.urlopen(poll_req).read())
 
             from google.oauth2.credentials import Credentials
@@ -349,7 +338,7 @@ def _get_credentials_device_flow(client_id, client_secret):
             return Credentials(
                 token=token_response["access_token"],
                 refresh_token=token_response.get("refresh_token"),
-                token_uri="https://oauth2.googleapis.com/token",
+                token_uri=GOOGLE_TOKEN_URI,
                 client_id=client_id,
                 client_secret=client_secret,
                 scopes=SCOPES,
@@ -406,9 +395,7 @@ def get_authenticated_service():
             except RefreshError as e:
                 log_print(f"Token refresh failed: {e}")
                 log_print("The stored token has expired or been revoked.")
-                log_print(
-                    "Deleting the token file and requesting new authentication..."
-                )
+                log_print("Deleting the token file and requesting new authentication...")
                 credentials = handle_refresh_error(token_file)
 
         if not credentials or not credentials.valid:
@@ -432,13 +419,11 @@ def load_subscriptions_cache():
         return None
 
     try:
-        with open(SUBSCRIPTIONS_CACHE_FILE, "r") as f:
+        with open(SUBSCRIPTIONS_CACHE_FILE) as f:
             cache = json.load(f)
 
         cached_at = datetime.datetime.fromisoformat(cache["cached_at"])
-        age_hours = (
-            datetime.datetime.now(datetime.UTC) - cached_at
-        ).total_seconds() / 3600
+        age_hours = (datetime.datetime.now(datetime.UTC) - cached_at).total_seconds() / 3600
 
         if age_hours < SUBSCRIPTIONS_CACHE_TTL_HOURS:
             channel_ids = cache["channel_ids"]
@@ -448,9 +433,7 @@ def load_subscriptions_cache():
             )
             return channel_ids
         else:
-            log_print(
-                f"Subscriptions cache expired ({age_hours:.1f}h old). Refreshing..."
-            )
+            log_print(f"Subscriptions cache expired ({age_hours:.1f}h old). Refreshing...")
             return None
 
     except Exception as e:
@@ -516,15 +499,15 @@ def get_subscriptions(youtube, force_refresh=False):
 def get_last_check_time():
     """Get the timestamp of the last time we checked for new videos."""
     if os.path.exists(LAST_CHECK_FILE):
-        with open(LAST_CHECK_FILE, "r") as f:
+        with open(LAST_CHECK_FILE) as f:
             timestamp = f.read().strip()
             if timestamp:
                 return timestamp
 
     # Default to 1 day ago if no last check time is saved
-    one_day_ago = (
-        datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=1)
-    ).strftime("%Y-%m-%dT%H:%M:%SZ")
+    one_day_ago = (datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=1)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
     return one_day_ago
 
 
@@ -553,11 +536,9 @@ def load_pending_videos():
     if not os.path.exists(PENDING_VIDEOS_FILE):
         return []
     try:
-        with open(PENDING_VIDEOS_FILE, "r") as f:
+        with open(PENDING_VIDEOS_FILE) as f:
             data = json.load(f)
-        log_print(
-            f"Resuming: {len(data)} pending videos found from previous interrupted run."
-        )
+        log_print(f"Resuming: {len(data)} pending videos found from previous interrupted run.")
         return data
     except Exception as e:
         log_print(f"Could not read pending videos file: {e}. Starting fresh.")
@@ -598,7 +579,7 @@ def load_scan_progress():
     if not os.path.exists(SCAN_PROGRESS_FILE):
         return None
     try:
-        with open(SCAN_PROGRESS_FILE, "r") as f:
+        with open(SCAN_PROGRESS_FILE) as f:
             data = json.load(f)
         log_print(
             f"Resuming scan from channel index {data['last_channel_index']} "
@@ -606,9 +587,7 @@ def load_scan_progress():
         )
         return data
     except Exception as e:
-        log_print(
-            f"Could not read scan progress file: {e}. Starting scan from scratch."
-        )
+        log_print(f"Could not read scan progress file: {e}. Starting scan from scratch.")
         return None
 
 
@@ -688,7 +667,7 @@ def fetch_playlist_page(youtube, request, cutoff_time, shorts_video_ids, max_res
             raise QuotaExceededException()
         if "not found" in error_msg or "forbidden" in error_msg:
             return None
-        log_print(f"Error fetching playlist page: {str(e)}")
+        log_print(f"Error fetching playlist page: {e!s}")
         return None
 
 
@@ -712,7 +691,7 @@ def get_channel_shorts_video_ids(youtube, channel_id, published_after, max_resul
     try:
         from datetime import datetime
 
-        shorts_video_ids = set()
+        shorts_video_ids: set[str] = set()
         cutoff_time = datetime.fromisoformat(published_after.replace("Z", "+00:00"))
 
         request = youtube.playlistItems().list(
@@ -755,9 +734,7 @@ def build_shorts_cache_for_channels(
 
     for i, channel_id in enumerate(channel_ids):
         if i % 10 == 0:  # Progress update every 10 channels
-            log_print(
-                f"Processing channel {i+1}/{len(channel_ids)} for recent Shorts..."
-            )
+            log_print(f"Processing channel {i + 1}/{len(channel_ids)} for recent Shorts...")
 
         try:
             channel_shorts = get_channel_shorts_video_ids(
@@ -829,9 +806,7 @@ def _evaluate_video_for_filter(video, shorts_cache, context=""):
     if is_youtube_short_efficient(video_id, shorts_cache):
         if SHORT_PLAYLIST:
             video["is_short"] = True  # routed to the dedicated Shorts playlist
-            log_print(
-                f"Found new Short for Shorts playlist ({context}): {video_title} ({channel})"
-            )
+            log_print(f"Found new Short for Shorts playlist ({context}): {video_title} ({channel})")
             return video, None
         if INCLUDE_SHORTS:
             log_print(f"Found new Short ({context}): {video_title} ({channel})")
@@ -841,9 +816,7 @@ def _evaluate_video_for_filter(video, shorts_cache, context=""):
 
     if is_teaser_or_trailer(video_title):
         if INCLUDE_TEASERS:
-            log_print(
-                f"Found new teaser/trailer ({context}): {video_title} ({channel})"
-            )
+            log_print(f"Found new teaser/trailer ({context}): {video_title} ({channel})")
             return video, None
         log_print(f"Skipping teaser/trailer ({context}): {video_title} ({channel})")
         return None, "teaser"
@@ -878,9 +851,7 @@ def filter_videos(video_list, shorts_cache, context=""):
     teaser_trailer_count = 0
 
     for video in video_list:
-        kept_video, skip_reason = _evaluate_video_for_filter(
-            video, shorts_cache, context
-        )
+        kept_video, skip_reason = _evaluate_video_for_filter(video, shorts_cache, context)
         if kept_video is not None:
             filtered_videos.append(kept_video)
         elif skip_reason == "short":
@@ -891,9 +862,7 @@ def filter_videos(video_list, shorts_cache, context=""):
     if shorts_count > 0:
         log_print(f"Filtered out {shorts_count} Shorts from {context} results")
     if teaser_trailer_count > 0:
-        log_print(
-            f"Filtered out {teaser_trailer_count} teasers/trailers from {context} results"
-        )
+        log_print(f"Filtered out {teaser_trailer_count} teasers/trailers from {context} results")
 
     return filtered_videos
 
@@ -914,15 +883,12 @@ def get_videos_from_activities(youtube, channel_id, last_check_time, shorts_cach
         candidate_videos = []
 
         for item in response.get("items", []):
-            if item["snippet"]["type"] == "upload":
-                if "upload" in item.get("contentDetails", {}):
-                    video_id = item["contentDetails"]["upload"]["videoId"]
-                    title = item["snippet"]["title"]
-                    channel_title = item["snippet"]["channelTitle"]
+            if item["snippet"]["type"] == "upload" and "upload" in item.get("contentDetails", {}):
+                video_id = item["contentDetails"]["upload"]["videoId"]
+                title = item["snippet"]["title"]
+                channel_title = item["snippet"]["channelTitle"]
 
-                    candidate_videos.append(
-                        {"id": video_id, "title": title, "channel": channel_title}
-                    )
+                candidate_videos.append({"id": video_id, "title": title, "channel": channel_title})
 
         # Filter videos according to content preferences
         return filter_videos(candidate_videos, shorts_cache, "activities")
@@ -967,9 +933,7 @@ def get_videos_from_search(youtube, channel_id, last_check_time, shorts_cache):
             title = item["snippet"]["title"]
             channel_title = item["snippet"]["channelTitle"]
 
-            candidate_videos.append(
-                {"id": video_id, "title": title, "channel": channel_title}
-            )
+            candidate_videos.append({"id": video_id, "title": title, "channel": channel_title})
 
         # Filter videos according to content preferences
         return filter_videos(candidate_videos, shorts_cache, "search")
@@ -1022,9 +986,7 @@ def get_new_videos_with_shorts_filtering(
     else:
         start_index = 0
         log_print("Building cache of recent YouTube Shorts...")
-        shorts_cache = build_shorts_cache_for_channels(
-            youtube, channel_ids, last_check_time
-        )
+        shorts_cache = build_shorts_cache_for_channels(youtube, channel_ids, last_check_time)
 
     # Log active filter settings
     filters_off = []
@@ -1039,9 +1001,7 @@ def get_new_videos_with_shorts_filtering(
     else:
         filters_off.append("teasers/trailers excluded")
     log_print(f"Content filters: {', '.join(filters_off)}.")
-    log_print(
-        "(Set INCLUDE_SHORTS=true, INCLUDE_TEASERS=true or SHORT_PLAYLIST=true to change.)"
-    )
+    log_print("(Set INCLUDE_SHORTS=true, INCLUDE_TEASERS=true or SHORT_PLAYLIST=true to change.)")
     new_videos = []
     batch_size = 5
     remaining = channel_ids[start_index:]
@@ -1057,9 +1017,7 @@ def get_new_videos_with_shorts_filtering(
 
         for channel_id in batch:
             # QuotaExceededException propagates up — caller will persist state
-            channel_videos = get_channel_videos(
-                youtube, channel_id, last_check_time, shorts_cache
-            )
+            channel_videos = get_channel_videos(youtube, channel_id, last_check_time, shorts_cache)
             new_videos.extend(channel_videos)
             absolute_index += 1
 
@@ -1077,9 +1035,7 @@ def process_channel_batch(youtube, channel_ids, last_check_time, shorts_cache):
     new_videos = []
 
     for channel_id in channel_ids:
-        channel_videos = get_channel_videos(
-            youtube, channel_id, last_check_time, shorts_cache
-        )
+        channel_videos = get_channel_videos(youtube, channel_id, last_check_time, shorts_cache)
         new_videos.extend(channel_videos)
 
     return new_videos
@@ -1144,7 +1100,7 @@ def _load_playlist_id_cache():
     if not os.path.exists(PLAYLIST_ID_CACHE_FILE):
         return {}
     try:
-        with open(PLAYLIST_ID_CACHE_FILE, "r") as f:
+        with open(PLAYLIST_ID_CACHE_FILE) as f:
             data = json.load(f)
         return data if isinstance(data, dict) else {}
     except Exception:
@@ -1307,9 +1263,7 @@ def add_to_watch_later(youtube, videos, playlist_id):
                 )
                 raise QuotaExceededException()
             elif "videoNotFound" in error_msg or "notFound" in error_msg:
-                log_print(
-                    f"Video {video_id} may have been removed or is not accessible."
-                )
+                log_print(f"Video {video_id} may have been removed or is not accessible.")
                 remaining.remove(video)
             elif "playlistForbidden" in error_msg or "forbidden" in error_msg.lower():
                 log_print(
@@ -1377,7 +1331,7 @@ def check_quota_usage(youtube):
             log_print("The quota resets at midnight Pacific Time.")
             return False
         else:
-            log_print(f"Error checking quota: {str(e)}")
+            log_print(f"Error checking quota: {e!s}")
             return True  # Assume quota is available if error is not quota-related
 
 
@@ -1393,9 +1347,7 @@ def main():
         # Check quota status before doing anything
         quota_available = check_quota_usage(youtube)
         if not quota_available:
-            log_print(
-                "Quota exceeded. Cannot proceed. Quota resets at midnight Pacific Time."
-            )
+            log_print("Quota exceeded. Cannot proceed. Quota resets at midnight Pacific Time.")
             return
 
         # Get or create the watch later playlist (cached after first run)
@@ -1405,9 +1357,7 @@ def main():
         # Get or create the dedicated Shorts playlist only when enabled
         shorts_playlist_id = None
         if SHORT_PLAYLIST:
-            shorts_playlist_id = get_playlist_id(
-                youtube, "Automated Watch Later Shorts"
-            )
+            shorts_playlist_id = get_playlist_id(youtube, "Automated Watch Later Shorts")
             log_print(f"Using Shorts playlist ID: {shorts_playlist_id}")
 
         # In-memory state — only written to disk on quota exceeded
@@ -1442,7 +1392,7 @@ def main():
             if new_videos:
                 log_print("\nNew videos found:")
                 for i, video in enumerate(new_videos):
-                    log_print(f"{i+1}. {video['title']} - {video['channel']}")
+                    log_print(f"{i + 1}. {video['title']} - {video['channel']}")
 
                 pending_videos = new_videos  # track in memory before adding
                 remaining = add_videos_to_playlists(
@@ -1464,24 +1414,16 @@ def main():
             log_print("\nYouTube API quota exceeded during execution.")
             if pending_videos:
                 save_pending_videos(pending_videos)
-                log_print(
-                    f"Saved {len(pending_videos)} pending videos to {PENDING_VIDEOS_FILE}."
-                )
+                log_print(f"Saved {len(pending_videos)} pending videos to {PENDING_VIDEOS_FILE}.")
             if scan_state:
-                save_scan_progress(
-                    scan_state["last_channel_index"], scan_state["shorts_cache"]
-                )
-                log_print(
-                    f"Saved scan progress at channel {scan_state['last_channel_index']}."
-                )
+                save_scan_progress(scan_state["last_channel_index"], scan_state["shorts_cache"])
+                log_print(f"Saved scan progress at channel {scan_state['last_channel_index']}.")
             log_print("The next run will resume exactly where this one stopped.")
-            log_print(
-                "last_check_time has NOT been updated — no videos will be missed."
-            )
+            log_print("last_check_time has NOT been updated — no videos will be missed.")
             log_print("Quota resets at midnight Pacific Time.")
 
         except Exception as e:
-            log_print(f"Unexpected error: {str(e)}")
+            log_print(f"Unexpected error: {e!s}")
 
     finally:
         quota.report()
