@@ -1,6 +1,10 @@
 FROM python:3.12.3-slim-bookworm
 
-RUN groupadd -r appuser && useradd -r -g appuser -u 1000 appuser
+RUN apt-get update && \
+    apt-get upgrade -y && \
+    rm -rf /var/lib/apt/lists/* && \
+    groupadd -r appuser && \
+    useradd -r -g appuser -u 1000 appuser
 
 WORKDIR /app
 
