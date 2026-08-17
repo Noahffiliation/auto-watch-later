@@ -5,7 +5,7 @@ RUN groupadd -r appuser && useradd -r -g appuser -u 1000 appuser
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --require-hashes --only-binary :all: -r requirements.txt
 COPY auto_watch_later.py .
 
 RUN mkdir -p /data && chown -R appuser:appuser /app /data
