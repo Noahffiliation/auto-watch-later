@@ -13,3 +13,7 @@ coverage.xml
 .pytest_cache/
 subscriptions_cache.json
 workflow.sh
+artifacts/
+container-sbom.spdx.json
+trivy-results.sarif
+.scannerwork/
