@@ -1,7 +1,6 @@
 .venv
 client_secrets.json
 token.pickle
-last_check_time.txt
 .vscode
 run.bat
 logs
@@ -12,3 +11,5 @@ __pycache__
 nosetests.xml
 coverage.xml
 .pytest_cache/
+subscriptions_cache.json
+workflow.sh
