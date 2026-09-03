@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+      - '.gitignore'
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+      - '.gitignore'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+  packages: write
+  security-events: write
+
+jobs:
+  python-ci:
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
+    uses: Noahffiliation/.github/.github/workflows/reusable-python-ci.yml@main
+    with:
+      python-version: "3.12.3"
+      test-docker: true
+    secrets:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
