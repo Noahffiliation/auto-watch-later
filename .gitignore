@@ -12,3 +12,4 @@ nosetests.xml
 coverage.xml
 .pytest_cache/
 subscriptions_cache.json
+workflow.sh
