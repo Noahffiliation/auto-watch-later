@@ -61,13 +61,15 @@ By default, Shorts and teasers/trailers are excluded from the playlist. You can 
 
 | Variable | Default | Description |
 |---|---|---|
-| `INCLUDE_SHORTS` | `false` | Include YouTube Shorts |
+| `INCLUDE_SHORTS` | `false` | Include YouTube Shorts in the main playlist |
 | `INCLUDE_TEASERS` | `false` | Include teasers and trailers (detected by title keywords) |
+| `SHORT_PLAYLIST` | `false` | Add Shorts to a dedicated "Automated Watch Later Shorts" playlist. Takes precedence over `INCLUDE_SHORTS`: when enabled, Shorts are always collected and routed to the dedicated playlist. |
 
 ```yaml
 environment:
   - INCLUDE_SHORTS=true
   - INCLUDE_TEASERS=true
+  - SHORT_PLAYLIST=true
 ```
 
 These can be used in both local and Docker modes.
@@ -78,10 +80,10 @@ The YouTube Data API v3 has a daily limit of 10,000 units. The script logs quota
 
 ```
 === API Quota consumed ===
-  playlistItems.insert: 53× (50 unit/call) = 2650 units 
-  activities.list: 355× (1 unit/call) = 355 units 
-  playlistItems.list: 265× (1 unit/call) = 265 units 
-  channels.list: 1× (1 unit/call) = 1 units 
+  playlistItems.insert: 53× (50 unit/call) = 2650 units
+  activities.list: 355× (1 unit/call) = 355 units
+  playlistItems.list: 265× (1 unit/call) = 265 units
+  channels.list: 1× (1 unit/call) = 1 units
   Total : 3271 / 10000 units  (32.7% of daily quota)
 ```
 
@@ -91,7 +93,7 @@ If the quota is exceeded mid-run, the script saves its progress and resumes auto
 |---|---|
 | `pending_videos.json` | Videos found but not yet added to the playlist |
 | `scan_progress.json` | Last channel index and Shorts cache for scan resume |
-| `playlist_id.txt` | Cached playlist ID to avoid scanning all playlists every run |
+| `playlists_id.txt` | Cached playlist IDs (main and, when `SHORT_PLAYLIST=true`, Shorts) to avoid scanning all playlists every run |
 | `subscriptions_cache.json` | Cached channel list (refreshed every 24h) |
 
 ## About <a name = "about"></a>

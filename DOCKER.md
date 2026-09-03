@@ -38,7 +38,8 @@ Docker will automatically clone the repository, build the image, and run the con
 ./data/
 ├── client_secrets.json      (created after OAuth)
 ├── token.pickle             (created after OAuth)
-└── last_check_time.txt      (created after first run)
+├── last_check_time.txt      (created after first run)
+└── playlists_id.txt         (cached playlist IDs, main + Shorts)
 
 ./logs/
 └── YYYY-MM-DD_HH-MM-SS.txt
@@ -105,4 +106,5 @@ environment:
   - PYTHONUNBUFFERED=1
   - INCLUDE_SHORTS=true
   - INCLUDE_TEASERS=true
+  - SHORT_PLAYLIST=true
 ```
