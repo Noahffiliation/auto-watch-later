@@ -1,0 +1,15 @@
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+.coverage
+coverage.xml
+.git
+.github
+.agent
+.vscode
+tests
+data/
+last_check_time.txt
