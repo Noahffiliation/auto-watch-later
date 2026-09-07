@@ -18,6 +18,7 @@ jobs:
   execute:
     name: Sync YouTube Watch Later
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
 
     steps:
       - name: Checkout code
@@ -29,11 +30,16 @@ jobs:
         uses: actions/setup-python@v7.0.0
         with:
           python-version: '3.12.3'
-          cache: 'pip'
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "requirements.txt"
 
       - name: Install dependencies
         run: |
-          if [ -f requirements.txt ]; then pip install --only-binary :all: --require-hashes -r requirements.txt; fi
+          if [ -f requirements.txt ]; then uv pip install --system --require-hashes -r requirements.txt; fi
 
       - name: Restore Secure Authentication Token
         env:
@@ -51,11 +57,25 @@ jobs:
           git add last_check_time.txt
           git diff --quiet && git diff --staged --quiet || (git commit -m "Update last check time [skip ci]" && git push)
 
+      - name: Generate Job Summary
+        if: always()
+        run: |
+          echo "## ▶️ YouTube Watch Later Sync Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "| --- | --- |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Trigger** | \`${{ github.event_name }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Sync Outcome** | \`${{ job.status }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Log Artifact** | \`youtube-sync-logs\` |" >> $GITHUB_STEP_SUMMARY
+          if [ -f "last_check_time.txt" ]; then
+            echo "| **Last Check Time** | \`$(cat last_check_time.txt)\` |" >> $GITHUB_STEP_SUMMARY
+          fi
+
       - name: Upload Logs
         uses: actions/upload-artifact@v7.0.1
         if: always()
         with:
           name: youtube-sync-logs
           path: logs/*.txt
-          retention-days: 30
+          retention-days: 14
           if-no-files-found: ignore
