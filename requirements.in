@@ -1,6 +1,0 @@
-cryptography==50.0.1
-google-api-python-client
-google-auth-oauthlib
-pytest
-pytest-cov
-pytest-mock

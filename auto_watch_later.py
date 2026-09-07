@@ -18,7 +18,7 @@ Setup (two modes):
     2. Enable YouTube Data API v3
     3. Create OAuth 2.0 credentials (Desktop application)
     4. Download the JSON file, rename it to 'client_secrets.json' and place it next to this script
-    5. Install requirements: pip install google-api-python-client google-auth-oauthlib google-auth-httplib2
+    5. Install dependencies: uv sync
     6. Run the script — a browser window will open automatically for authentication
 
   Mode 2 - Headless/Docker/Server (no browser):
@@ -27,7 +27,7 @@ Setup (two modes):
     3. Create OAuth 2.0 credentials (TVs and Limited Input devices)
     4. Set environment variables: YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET
        (or place client_secrets.json next to the script as a fallback)
-    5. Install requirements: pip install google-api-python-client google-auth-oauthlib google-auth-httplib2
+    5. Install dependencies: uv sync
     6. Run the script — it will display a short URL and code to validate from any device
 
 The script detects automatically which mode to use based on browser availability.

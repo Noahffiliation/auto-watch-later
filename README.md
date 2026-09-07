@@ -4,8 +4,8 @@
 
 ### Local (browser available)
 ```bash
-pip install -r requirements.txt
-python auto_watch_later.py
+uv sync
+uv run auto_watch_later.py
 ```
 A browser window will open automatically for OAuth authentication.
 
