@@ -21,6 +21,6 @@ jobs:
     permissions:
       contents: read
       security-events: write
-    uses: Noahffiliation/.github/.github/workflows/reusable-codeql.yml@b156c12177fb356641cfd43e37e7e669d1860374 # v1.0.0
+    uses: Noahffiliation/.github/.github/workflows/reusable-codeql.yml@35c21537a57740a6d70c34b826b4af321341da50 # v1.1.0
     with:
       language: "python"
