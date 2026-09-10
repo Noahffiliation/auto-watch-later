@@ -1,4 +1,4 @@
-FROM python:3.14.7-slim-bookworm
+FROM python:3.15.0rc1-slim-bookworm
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
@@ -11,7 +11,7 @@ RUN apt-get update && \
 WORKDIR /app
 
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev --no-install-project && \
+RUN uv sync --no-build --locked --no-dev --no-install-project && \
     rm -f /bin/uv /bin/uvx && \
     pip uninstall -y pip setuptools wheel
 COPY auto_watch_later.py .

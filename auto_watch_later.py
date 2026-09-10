@@ -300,6 +300,7 @@ def _get_credentials_device_flow(client_id, client_secret):
     Displays a short URL and user code — validate from any device, no interaction needed here.
     """
     import json
+    import urllib.error
     import urllib.parse
     import urllib.request
 
