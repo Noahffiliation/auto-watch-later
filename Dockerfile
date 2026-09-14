@@ -1,4 +1,6 @@
-FROM python:3.12.3-slim-bookworm
+FROM python:3.15.0rc2-slim-bookworm
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 RUN apt-get update && \
     apt-get upgrade -y && \
@@ -8,14 +10,16 @@ RUN apt-get update && \
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir --require-hashes --only-binary :all: -r requirements.txt && \
+COPY pyproject.toml uv.lock ./
+RUN uv sync --no-build --locked --no-dev --no-install-project && \
+    rm -f /bin/uv /bin/uvx && \
     pip uninstall -y pip setuptools wheel
 COPY auto_watch_later.py .
 
 RUN mkdir -p /data && chown -R appuser:appuser /app /data
 
 ENV DATA_DIR=/data
+ENV PATH="/app/.venv/bin:$PATH"
 WORKDIR /data
 
 USER appuser

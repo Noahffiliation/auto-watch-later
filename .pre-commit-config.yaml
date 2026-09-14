@@ -2,7 +2,7 @@
 # PRE-COMMIT CONFIGURATION TEMPLATE (Python)
 # =============================================================================
 # Location: Copy to .pre-commit-config.yaml in Python project roots
-# Setup:    pip install pre-commit && pre-commit install
+# Setup:    uv tool install pre-commit && pre-commit install
 # Purpose:  Catches syntax, formatting, and linting errors locally before git commit
 # =============================================================================
 
