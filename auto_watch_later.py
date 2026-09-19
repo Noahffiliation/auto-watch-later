@@ -1007,7 +1007,7 @@ def get_new_videos_with_shorts_filtering(
         filters_off.append("teasers/trailers excluded")
     log_print(f"Content filters: {', '.join(filters_off)}.")
     log_print("(Set INCLUDE_SHORTS=true, INCLUDE_TEASERS=true or SHORT_PLAYLIST=true to change.)")
-    new_videos = []
+    new_videos: list[dict] = []
     batch_size = 5
     remaining = channel_ids[start_index:]
     total = len(channel_ids)
@@ -1352,6 +1352,65 @@ def check_quota_usage(youtube):
             return True  # Assume quota is available if error is not quota-related
 
 
+def _resolve_playlists(youtube):
+    """Get or create the watch later playlist and optional Shorts playlist."""
+    playlist_id = get_playlist_id(youtube)
+    log_print(f"Using playlist ID: {playlist_id}")
+
+    shorts_playlist_id = None
+    if SHORT_PLAYLIST:
+        shorts_playlist_id = get_playlist_id(youtube, "Automated Watch Later Shorts")
+        log_print(f"Using Shorts playlist ID: {shorts_playlist_id}")
+
+    return playlist_id, shorts_playlist_id
+
+
+def _resume_pending_videos(youtube, saved_pending, playlist_id, shorts_playlist_id):
+    """Resume adding pending videos from a previous run."""
+    log_print(f"\nResuming: adding {len(saved_pending)} pending videos from previous run...")
+    remaining = add_videos_to_playlists(youtube, saved_pending, playlist_id, shorts_playlist_id)
+    if not remaining:
+        clear_pending_videos()
+        log_print("All pending videos processed. Proceeding with new scan.")
+    return remaining
+
+
+def _validate_scan_progress(saved_progress, total_channels):
+    """Validate saved scan progress, discarding and clearing it if it covers all channels."""
+    if saved_progress and saved_progress.get("last_channel_index", 0) >= total_channels:
+        log_print("Saved scan progress covers the full channel list; ignoring it and clearing it.")
+        clear_scan_progress()
+        return None
+    return saved_progress
+
+
+def _process_new_videos(youtube, new_videos, playlist_id, shorts_playlist_id):
+    """Log newly discovered videos and add them to playlists."""
+    if not new_videos:
+        log_print("No new videos found since last check.")
+        return []
+
+    log_print("\nNew videos found:")
+    for i, video in enumerate(new_videos):
+        log_print(f"{i + 1}. {video['title']} - {video['channel']}")
+
+    return add_videos_to_playlists(youtube, new_videos, playlist_id, shorts_playlist_id)
+
+
+def _handle_quota_exceeded(pending_videos, scan_state, total_channels):
+    """Persist pending state when quota is exceeded during execution."""
+    log_print("\nYouTube API quota exceeded during execution.")
+    if pending_videos:
+        save_pending_videos(pending_videos)
+        log_print(f"Saved {len(pending_videos)} pending videos to {PENDING_VIDEOS_FILE}.")
+    if scan_state and scan_state["last_channel_index"] < total_channels:
+        save_scan_progress(scan_state["last_channel_index"], scan_state["shorts_cache"])
+        log_print(f"Saved scan progress at channel {scan_state['last_channel_index']}.")
+    log_print("The next run will resume exactly where this one stopped.")
+    log_print("last_check_time has NOT been updated — no videos will be missed.")
+    log_print("Quota resets at midnight Pacific Time.")
+
+
 def main():
     # Setup logging
     log_path = setup_logging()
@@ -1367,15 +1426,8 @@ def main():
             log_print("Quota exceeded. Cannot proceed. Quota resets at midnight Pacific Time.")
             return
 
-        # Get or create the watch later playlist (cached after first run)
-        playlist_id = get_playlist_id(youtube)
-        log_print(f"Using playlist ID: {playlist_id}")
-
-        # Get or create the dedicated Shorts playlist only when enabled
-        shorts_playlist_id = None
-        if SHORT_PLAYLIST:
-            shorts_playlist_id = get_playlist_id(youtube, "Automated Watch Later Shorts")
-            log_print(f"Using Shorts playlist ID: {shorts_playlist_id}")
+        # Get or create the watch later playlist (cached after first run) and optional Shorts playlist
+        playlist_id, shorts_playlist_id = _resolve_playlists(youtube)
 
         # In-memory state — only written to disk on quota exceeded
         pending_videos = []  # videos found but not yet added
@@ -1388,17 +1440,10 @@ def main():
             saved_progress = load_scan_progress()
 
             if saved_pending:
-                log_print(
-                    f"\nResuming: adding {len(saved_pending)} pending videos from previous run..."
-                )
                 pending_videos = saved_pending  # persist correctly if quota hits again here
-                remaining = add_videos_to_playlists(
+                pending_videos = _resume_pending_videos(
                     youtube, saved_pending, playlist_id, shorts_playlist_id
                 )
-                pending_videos = remaining
-                if not remaining:
-                    clear_pending_videos()
-                    log_print("All pending videos processed. Proceeding with new scan.")
                 # If remaining is non-empty, QuotaExceededException was raised above
 
             # --- Scan for new videos (in memory, resume if progress file exists) ---
@@ -1409,12 +1454,7 @@ def main():
             # short of the full channel list. A scan that finished but whose
             # *add-to-playlist* step then hit quota would otherwise be replayed as
             # "already scanned", silently skipping the search for new videos next run.
-            if saved_progress and saved_progress.get("last_channel_index", 0) >= len(channel_ids):
-                log_print(
-                    "Saved scan progress covers the full channel list; ignoring it and clearing it."
-                )
-                clear_scan_progress()
-                saved_progress = None
+            saved_progress = _validate_scan_progress(saved_progress, len(channel_ids))
 
             new_videos, scan_state = get_new_videos_with_shorts_filtering(
                 youtube, channel_ids, last_check_time, resume_progress=saved_progress
@@ -1426,18 +1466,9 @@ def main():
                 # route through the same quota-exceeded handling below.
                 raise QuotaExceededException()
 
-            if new_videos:
-                log_print("\nNew videos found:")
-                for i, video in enumerate(new_videos):
-                    log_print(f"{i + 1}. {video['title']} - {video['channel']}")
-
-                remaining = add_videos_to_playlists(
-                    youtube, new_videos, playlist_id, shorts_playlist_id
-                )
-                pending_videos = remaining  # update to only what's left
-
-            else:
-                log_print("No new videos found since last check.")
+            pending_videos = _process_new_videos(
+                youtube, new_videos, playlist_id, shorts_playlist_id
+            )
 
             # Full run completed — clear state files and update last check time
             clear_pending_videos()
@@ -1447,16 +1478,7 @@ def main():
 
         except QuotaExceededException:
             # Only write to disk here — quota exceeded is the one predictable interruption
-            log_print("\nYouTube API quota exceeded during execution.")
-            if pending_videos:
-                save_pending_videos(pending_videos)
-                log_print(f"Saved {len(pending_videos)} pending videos to {PENDING_VIDEOS_FILE}.")
-            if scan_state and scan_state["last_channel_index"] < len(channel_ids):
-                save_scan_progress(scan_state["last_channel_index"], scan_state["shorts_cache"])
-                log_print(f"Saved scan progress at channel {scan_state['last_channel_index']}.")
-            log_print("The next run will resume exactly where this one stopped.")
-            log_print("last_check_time has NOT been updated — no videos will be missed.")
-            log_print("Quota resets at midnight Pacific Time.")
+            _handle_quota_exceeded(pending_videos, scan_state, len(channel_ids))
 
         except Exception as e:
             log_print(f"Unexpected error: {e!s}")
