@@ -69,12 +69,18 @@ LAST_CHECK_FILE = "last_check_time.txt"
 #                                  playlist. Takes precedence over INCLUDE_SHORTS: when true,
 #                                  Shorts are always collected and added to the dedicated
 #                                  playlist regardless of INCLUDE_SHORTS. (default: false)
+# EXCLUDE_SHORTS_CHANNELS=a,b,c    Comma-separated channels (IDs like UC... and/or exact channel
+#                                  names, case-insensitive) whose Shorts are ignored instead of
+#                                  being added to the dedicated Shorts playlist. Only used when
+#                                  SHORT_PLAYLIST=true; their regular videos are still added to
+#                                  the main playlist. (default: none)
 #
 # Examples (docker-compose.yml):
 #   environment:
 #     - INCLUDE_SHORTS=true
 #     - INCLUDE_TEASERS=true
 #     - SHORT_PLAYLIST=true
+#     - EXCLUDE_SHORTS_CHANNELS=UCxxxxxxxxxxxxxxxxxxxxxx,Some Channel Name
 # ---------------------------------------------------------------------------
 
 
@@ -88,9 +94,16 @@ def _env_bool(name, default):
     return default
 
 
+def _env_list(name):
+    """Read a comma-separated environment variable as a set of lowercase, trimmed entries."""
+    raw = os.environ.get(name, "")
+    return frozenset(item.strip().lower() for item in raw.split(",") if item.strip())
+
+
 INCLUDE_SHORTS = _env_bool("INCLUDE_SHORTS", default=False)
 INCLUDE_TEASERS = _env_bool("INCLUDE_TEASERS", default=False)
 SHORT_PLAYLIST = _env_bool("SHORT_PLAYLIST", default=False)
+EXCLUDE_SHORTS_CHANNELS = _env_list("EXCLUDE_SHORTS_CHANNELS")
 
 # File to cache subscribed channel IDs
 SUBSCRIPTIONS_CACHE_FILE = "subscriptions_cache.json"
@@ -772,6 +785,23 @@ def is_youtube_short_efficient(video_id, shorts_cache):
     return video_id in shorts_cache
 
 
+def is_channel_excluded_from_shorts(channel_id, channel_name):
+    """
+    Check whether a channel is listed in EXCLUDE_SHORTS_CHANNELS.
+
+    Entries can be channel IDs (UC...) or exact channel names; matching is case-insensitive.
+
+    Args:
+        channel_id: ID of the channel, or None if unknown
+        channel_name: Display name of the channel
+
+    Returns:
+        Boolean indicating whether the channel's Shorts must stay out of the Shorts playlist
+    """
+    candidates = {(channel_id or "").lower(), (channel_name or "").lower()}
+    return not candidates.isdisjoint(EXCLUDE_SHORTS_CHANNELS)
+
+
 def is_teaser_or_trailer(video_title):
     """
     Check if a video title contains 'teaser' or 'trailer' keywords.
@@ -786,7 +816,7 @@ def is_teaser_or_trailer(video_title):
     return "teaser" in title_lower or "trailer" in title_lower
 
 
-def _evaluate_video_for_filter(video, shorts_cache, context=""):
+def _evaluate_video_for_filter(video, shorts_cache, context="", channel_id=None):
     """
     Evaluate a single video against content preferences.
 
@@ -794,6 +824,8 @@ def _evaluate_video_for_filter(video, shorts_cache, context=""):
         video: Video dict with 'id', 'title', 'channel'
         shorts_cache: Set of known Shorts video IDs
         context: Context string for logging
+        channel_id: ID of the channel the video belongs to, or None if unknown. Only used to
+                    apply EXCLUDE_SHORTS_CHANNELS.
 
     Returns:
         tuple: (video_or_none, skip_reason)
@@ -806,6 +838,12 @@ def _evaluate_video_for_filter(video, shorts_cache, context=""):
 
     if is_youtube_short_efficient(video_id, shorts_cache):
         if SHORT_PLAYLIST:
+            if is_channel_excluded_from_shorts(channel_id, channel):
+                log_print(
+                    f"Skipping Short from channel excluded from the Shorts playlist ({context}): "
+                    f"{video_title} ({channel})"
+                )
+                return None, "short"
             video["is_short"] = True  # routed to the dedicated Shorts playlist
             log_print(f"Found new Short for Shorts playlist ({context}): {video_title} ({channel})")
             return video, None
@@ -826,7 +864,7 @@ def _evaluate_video_for_filter(video, shorts_cache, context=""):
     return video, None
 
 
-def filter_videos(video_list, shorts_cache, context=""):
+def filter_videos(video_list, shorts_cache, context="", channel_id=None):
     """
     Filter videos based on content type preferences.
 
@@ -837,11 +875,17 @@ def filter_videos(video_list, shorts_cache, context=""):
                                    when true, Shorts are always kept and tagged with
                                    'is_short' so the caller can route them to the
                                    dedicated Shorts playlist)
+      EXCLUDE_SHORTS_CHANNELS=a,b (default: none — only used when SHORT_PLAYLIST=true:
+                                   Shorts from these channels are skipped instead of being
+                                   tagged for the Shorts playlist; their regular videos
+                                   are kept)
 
     Args:
         video_list: List of video dicts with 'id', 'title', 'channel'
         shorts_cache: Set of known Shorts video IDs
         context: Context string for logging
+        channel_id: ID of the channel all the videos come from, or None if unknown. Used to
+                    apply EXCLUDE_SHORTS_CHANNELS.
 
     Returns:
         Filtered list of videos according to current settings. Shorts destined for
@@ -852,7 +896,9 @@ def filter_videos(video_list, shorts_cache, context=""):
     teaser_trailer_count = 0
 
     for video in video_list:
-        kept_video, skip_reason = _evaluate_video_for_filter(video, shorts_cache, context)
+        kept_video, skip_reason = _evaluate_video_for_filter(
+            video, shorts_cache, context, channel_id
+        )
         if kept_video is not None:
             filtered_videos.append(kept_video)
         elif skip_reason == "short":
@@ -892,7 +938,7 @@ def get_videos_from_activities(youtube, channel_id, last_check_time, shorts_cach
                 candidate_videos.append({"id": video_id, "title": title, "channel": channel_title})
 
         # Filter videos according to content preferences
-        return filter_videos(candidate_videos, shorts_cache, "activities")
+        return filter_videos(candidate_videos, shorts_cache, "activities", channel_id)
 
     except Exception as e:
         error_msg = str(e)
@@ -937,7 +983,7 @@ def get_videos_from_search(youtube, channel_id, last_check_time, shorts_cache):
             candidate_videos.append({"id": video_id, "title": title, "channel": channel_title})
 
         # Filter videos according to content preferences
-        return filter_videos(candidate_videos, shorts_cache, "search")
+        return filter_videos(candidate_videos, shorts_cache, "search", channel_id)
 
     except Exception as search_error:
         error_msg = str(search_error)
@@ -949,6 +995,21 @@ def get_videos_from_search(youtube, channel_id, last_check_time, shorts_cache):
 
         log_print(f"Search fallback also failed: {error_msg}")
         return []
+
+
+def _log_excluded_shorts_channels():
+    """Log how EXCLUDE_SHORTS_CHANNELS applies to this run (nothing if it is not set)."""
+    if not EXCLUDE_SHORTS_CHANNELS:
+        return
+    if SHORT_PLAYLIST:
+        log_print(
+            f"Shorts skipped for {len(EXCLUDE_SHORTS_CHANNELS)} channel(s) "
+            "excluded from the Shorts playlist."
+        )
+    else:
+        log_print(
+            "EXCLUDE_SHORTS_CHANNELS is set but ignored: it only applies when SHORT_PLAYLIST=true."
+        )
 
 
 def get_new_videos_with_shorts_filtering(
@@ -1006,7 +1067,11 @@ def get_new_videos_with_shorts_filtering(
     else:
         filters_off.append("teasers/trailers excluded")
     log_print(f"Content filters: {', '.join(filters_off)}.")
-    log_print("(Set INCLUDE_SHORTS=true, INCLUDE_TEASERS=true or SHORT_PLAYLIST=true to change.)")
+    _log_excluded_shorts_channels()
+    log_print(
+        "(Set INCLUDE_SHORTS=true, INCLUDE_TEASERS=true or SHORT_PLAYLIST=true to change; "
+        "EXCLUDE_SHORTS_CHANNELS skips the Shorts of chosen channels.)"
+    )
     new_videos = []
     batch_size = 5
     remaining = channel_ids[start_index:]

@@ -12,3 +12,4 @@ services:
     # environment:
     #   - INCLUDE_SHORTS=false   # Set to true to include YouTube Shorts, default false
     #   - INCLUDE_TEASERS=false  # Set to true to include teasers and trailers, default false
+    #   - EXCLUDE_SHORTS_CHANNELS=UCxxxxxxxxxxxxxxxxxxxxxx,Some Channel Name  # Channels (IDs or names) whose Shorts are ignored; needs SHORT_PLAYLIST=true
