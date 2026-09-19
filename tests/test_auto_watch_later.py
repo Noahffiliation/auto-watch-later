@@ -1,7 +1,7 @@
 import datetime
 import os
-import pickle
 import sys
+from email.message import Message
 from unittest.mock import MagicMock, mock_open
 
 import pytest
@@ -19,7 +19,7 @@ def mock_youtube_client():
 
 def test_setup_logging(mocker, monkeypatch):
     monkeypatch.setattr(auto_watch_later, "log_file", None)
-    mocker.patch("os.makedirs")
+    mock_makedirs = mocker.patch("os.makedirs")
     mocker.patch("os.path.exists", return_value=False)  # Ensure makedirs is called
     mock_open_func = mocker.mock_open()
     mocker.patch("builtins.open", mock_open_func)
@@ -27,7 +27,7 @@ def test_setup_logging(mocker, monkeypatch):
 
     auto_watch_later.setup_logging()
 
-    os.makedirs.assert_called_with("logs")
+    mock_makedirs.assert_called_with("logs")
     assert auto_watch_later.log_file is not None
 
 
@@ -211,6 +211,7 @@ def test_get_videos_from_activities(mock_youtube_client):
         mock_youtube_client, "UC123", "2024-01-01Z", set()
     )
 
+    assert videos is not None
     assert len(videos) == 1
     assert videos[0]["id"] == "v1"
     assert videos[0]["title"] == "Video 1"
@@ -295,11 +296,11 @@ def test_get_playlist_id_cached_invalid(mock_youtube_client, mocker):
     mock_youtube_client.playlists().list.return_value = mock_list_request
     mock_list_request.execute.return_value = {"items": []}  # invalid/deleted playlist
 
-    mocker.patch("auto_watch_later._fetch_or_create_playlist", return_value="PL_NEW")
+    mock_fetch = mocker.patch("auto_watch_later._fetch_or_create_playlist", return_value="PL_NEW")
 
     pid = auto_watch_later.get_playlist_id(mock_youtube_client)
     assert pid == "PL_NEW"
-    auto_watch_later._fetch_or_create_playlist.assert_called_once()
+    mock_fetch.assert_called_once()
 
 
 def test_get_playlist_id_no_cache(mock_youtube_client, mocker):
@@ -308,11 +309,11 @@ def test_get_playlist_id_no_cache(mock_youtube_client, mocker):
     mocker.patch("builtins.open", mock_open_func)
     mocker.patch("os.replace")
 
-    mocker.patch("auto_watch_later._fetch_or_create_playlist", return_value="PL_NEW")
+    mock_fetch = mocker.patch("auto_watch_later._fetch_or_create_playlist", return_value="PL_NEW")
 
     pid = auto_watch_later.get_playlist_id(mock_youtube_client)
     assert pid == "PL_NEW"
-    auto_watch_later._fetch_or_create_playlist.assert_called_once()
+    mock_fetch.assert_called_once()
 
 
 def test_add_to_watch_later(mock_youtube_client, mocker):
@@ -428,16 +429,16 @@ def test_load_credentials(mocker):
 
 def test_handle_refresh_error(mocker):
     mocker.patch("os.path.exists", return_value=True)
-    mocker.patch("os.remove")
+    mock_remove = mocker.patch("os.remove")
     auto_watch_later.handle_refresh_error("token")
-    os.remove.assert_called_with("token")
+    mock_remove.assert_called_with("token")
 
 
 def test_save_credentials(mocker):
     mocker.patch("builtins.open", mock_open())
-    mocker.patch("pickle.dump")
+    mock_dump = mocker.patch("pickle.dump")
     auto_watch_later.save_credentials("creds", "token")
-    pickle.dump.assert_called()
+    mock_dump.assert_called()
 
 
 def test_has_browser(mocker):
@@ -550,7 +551,7 @@ def test_get_credentials_device_flow_pending_then_success(mocker):
 
     # First poll returns authorization_pending error, second returns success
     fp = BytesIO(b'{"error": "authorization_pending"}')
-    err = urllib.error.HTTPError("url", 400, "Bad Request", {}, fp)
+    err = urllib.error.HTTPError("url", 400, "Bad Request", Message(), fp)
 
     mock_response2 = MagicMock()
     mock_response2.read.return_value = (
@@ -573,7 +574,7 @@ def test_get_credentials_device_flow_slow_down_then_success(mocker):
 
     # First poll returns slow_down error, second returns success
     fp = BytesIO(b'{"error": "slow_down"}')
-    err = urllib.error.HTTPError("url", 400, "Bad Request", {}, fp)
+    err = urllib.error.HTTPError("url", 400, "Bad Request", Message(), fp)
 
     mock_response2 = MagicMock()
     mock_response2.read.return_value = (
@@ -596,7 +597,7 @@ def test_get_credentials_device_flow_other_error(mocker):
 
     # First poll returns access_denied error
     fp = BytesIO(b'{"error": "access_denied"}')
-    err = urllib.error.HTTPError("url", 400, "Bad Request", {}, fp)
+    err = urllib.error.HTTPError("url", 400, "Bad Request", Message(), fp)
 
     mocker.patch("urllib.request.urlopen", side_effect=[mock_response1, err])
     mocker.patch("time.sleep")
@@ -627,20 +628,20 @@ def test_get_authenticated_service(mocker):
     mock_creds = MagicMock()
     mock_creds.valid = True
     mocker.patch("auto_watch_later.load_credentials", return_value=mock_creds)
-    mocker.patch("auto_watch_later.build")
+    mock_build = mocker.patch("auto_watch_later.build")
 
     auto_watch_later.get_authenticated_service()
-    auto_watch_later.build.assert_called()
+    mock_build.assert_called()
 
 
 def test_main(mocker):
     # Mock everything to avoid IO
     mocker.patch("auto_watch_later.setup_logging")
     mocker.patch("auto_watch_later.cleanup_logging")
-    mocker.patch("auto_watch_later.get_authenticated_service")
+    mock_auth = mocker.patch("auto_watch_later.get_authenticated_service")
     mocker.patch("auto_watch_later.check_quota_usage", return_value=True)
     mocker.patch("auto_watch_later.get_playlist_id", return_value="PL123")
-    mocker.patch("auto_watch_later.get_subscriptions", return_value=["c1"])
+    mock_subs = mocker.patch("auto_watch_later.get_subscriptions", return_value=["c1"])
     mocker.patch("auto_watch_later.get_last_check_time", return_value="time")
     mocker.patch(
         "auto_watch_later.get_new_videos_with_shorts_filtering",
@@ -649,18 +650,18 @@ def test_main(mocker):
             {"last_channel_index": 1, "shorts_cache": set()},
         ),
     )
-    mocker.patch("auto_watch_later.add_to_watch_later", return_value=(1, []))
-    mocker.patch("auto_watch_later.save_check_time")
+    mock_add = mocker.patch("auto_watch_later.add_to_watch_later", return_value=(1, []))
+    mock_save_time = mocker.patch("auto_watch_later.save_check_time")
     mocker.patch("auto_watch_later.load_pending_videos", return_value=[])
     mocker.patch("auto_watch_later.load_scan_progress", return_value=None)
 
     auto_watch_later.main()
 
     # Verify core flow steps happened
-    auto_watch_later.get_authenticated_service.assert_called()
-    auto_watch_later.get_subscriptions.assert_called()
-    auto_watch_later.add_to_watch_later.assert_called()
-    auto_watch_later.save_check_time.assert_called()
+    mock_auth.assert_called()
+    mock_subs.assert_called()
+    mock_add.assert_called()
+    mock_save_time.assert_called()
 
     # Test quota exceeded
     mocker.patch("auto_watch_later.check_quota_usage", return_value=False)
@@ -681,15 +682,15 @@ def test_get_authenticated_service_refresh(mocker):
     mock_creds.refresh.side_effect = make_valid
 
     mocker.patch("auto_watch_later.load_credentials", return_value=mock_creds)
-    mocker.patch("auto_watch_later.build")
-    mocker.patch("auto_watch_later.save_credentials")
+    mock_build = mocker.patch("auto_watch_later.build")
+    mock_save_creds = mocker.patch("auto_watch_later.save_credentials")
 
     auto_watch_later.get_authenticated_service()
 
     mock_creds.refresh.assert_called()
-    auto_watch_later.build.assert_called()
+    mock_build.assert_called()
     # Verify we did NOT try to get new credentials or save them
-    auto_watch_later.save_credentials.assert_not_called()
+    mock_save_creds.assert_not_called()
 
 
 def test_get_authenticated_service_refresh_fail(mocker):
@@ -705,16 +706,18 @@ def test_get_authenticated_service_refresh_fail(mocker):
     mock_creds.refresh.side_effect = RefreshError("Fail")
 
     mocker.patch("auto_watch_later.load_credentials", return_value=mock_creds)
-    mocker.patch("auto_watch_later.handle_refresh_error", return_value=None)  # Clears creds
-    mocker.patch("auto_watch_later.get_new_credentials", return_value="new_creds")
+    mock_handle_err = mocker.patch(
+        "auto_watch_later.handle_refresh_error", return_value=None
+    )  # Clears creds
+    mock_get_new = mocker.patch("auto_watch_later.get_new_credentials", return_value="new_creds")
     mocker.patch("auto_watch_later.save_credentials")
     mocker.patch("auto_watch_later.build")
 
     auto_watch_later.get_authenticated_service()
 
     mock_creds.refresh.assert_called()
-    auto_watch_later.handle_refresh_error.assert_called()
-    auto_watch_later.get_new_credentials.assert_called()
+    mock_handle_err.assert_called()
+    mock_get_new.assert_called()
 
 
 def test_env_bool(mocker):
@@ -831,9 +834,9 @@ def test_pending_videos_io(mocker):
 
     # 4. clear_pending_videos
     mocker.patch("os.path.exists", return_value=True)
-    mocker.patch("os.remove")
+    mock_remove = mocker.patch("os.remove")
     auto_watch_later.clear_pending_videos()
-    os.remove.assert_called_with(auto_watch_later.PENDING_VIDEOS_FILE)
+    mock_remove.assert_called_with(auto_watch_later.PENDING_VIDEOS_FILE)
 
 
 def test_scan_progress_io(mocker):
@@ -861,9 +864,9 @@ def test_scan_progress_io(mocker):
 
     # 4. clear_scan_progress
     mocker.patch("os.path.exists", return_value=True)
-    mocker.patch("os.remove")
+    mock_remove = mocker.patch("os.remove")
     auto_watch_later.clear_scan_progress()
-    os.remove.assert_called_with(auto_watch_later.SCAN_PROGRESS_FILE)
+    mock_remove.assert_called_with(auto_watch_later.SCAN_PROGRESS_FILE)
 
 
 def test_fetch_playlist_page_cases(mock_youtube_client):
@@ -1233,7 +1236,7 @@ def test_main_resume_and_exception_paths(mocker):
         return_value={"last_channel_index": 0, "shorts_cache": []},
     )
     mocker.patch("auto_watch_later.add_to_watch_later", return_value=(1, []))
-    mocker.patch("auto_watch_later.clear_pending_videos")
+    mock_clear_pending = mocker.patch("auto_watch_later.clear_pending_videos")
 
     mocker.patch(
         "auto_watch_later.get_new_videos_with_shorts_filtering",
@@ -1243,7 +1246,7 @@ def test_main_resume_and_exception_paths(mocker):
     mocker.patch("auto_watch_later.clear_scan_progress")
 
     auto_watch_later.main()
-    auto_watch_later.clear_pending_videos.assert_called()
+    mock_clear_pending.assert_called()
 
     # Mock QuotaExceededException in main flow
     mocker.patch("auto_watch_later.load_pending_videos", return_value=[])
@@ -1564,3 +1567,79 @@ def test_main_short_playlist_enabled(mocker, monkeypatch):
     assert mock_get_pl.call_count == 2
     mock_get_pl.assert_any_call(mocker.ANY)
     mock_get_pl.assert_any_call(mocker.ANY, "Automated Watch Later Shorts")
+
+
+def test_resolve_playlists(mock_youtube_client, mocker, monkeypatch):
+    monkeypatch.setattr(auto_watch_later, "SHORT_PLAYLIST", False)
+    mocker.patch("auto_watch_later.get_playlist_id", return_value="PL_MAIN")
+    pl, shorts = auto_watch_later._resolve_playlists(mock_youtube_client)
+    assert pl == "PL_MAIN"
+    assert shorts is None
+
+    monkeypatch.setattr(auto_watch_later, "SHORT_PLAYLIST", True)
+    mocker.patch("auto_watch_later.get_playlist_id", side_effect=["PL_MAIN", "PL_SHORTS"])
+    pl, shorts = auto_watch_later._resolve_playlists(mock_youtube_client)
+    assert pl == "PL_MAIN"
+    assert shorts == "PL_SHORTS"
+
+
+def test_resume_pending_videos(mock_youtube_client, mocker):
+    mocker.patch("auto_watch_later.add_videos_to_playlists", return_value=[])
+    mock_clear = mocker.patch("auto_watch_later.clear_pending_videos")
+    remaining = auto_watch_later._resume_pending_videos(
+        mock_youtube_client, [{"id": "v1"}], "PL_MAIN", None
+    )
+    assert remaining == []
+    mock_clear.assert_called_once()
+
+    mocker.patch("auto_watch_later.add_videos_to_playlists", return_value=[{"id": "v1"}])
+    mock_clear.reset_mock()
+    remaining = auto_watch_later._resume_pending_videos(
+        mock_youtube_client, [{"id": "v1"}], "PL_MAIN", None
+    )
+    assert remaining == [{"id": "v1"}]
+    mock_clear.assert_not_called()
+
+
+def test_validate_scan_progress(mocker):
+    mock_clear = mocker.patch("auto_watch_later.clear_scan_progress")
+    assert auto_watch_later._validate_scan_progress(None, 5) is None
+    mock_clear.assert_not_called()
+
+    progress = {"last_channel_index": 2}
+    assert auto_watch_later._validate_scan_progress(progress, 5) == progress
+    mock_clear.assert_not_called()
+
+    progress_full = {"last_channel_index": 5}
+    assert auto_watch_later._validate_scan_progress(progress_full, 5) is None
+    mock_clear.assert_called_once()
+
+
+def test_process_new_videos(mock_youtube_client, mocker):
+    mock_add = mocker.patch("auto_watch_later.add_videos_to_playlists", return_value=[])
+    assert auto_watch_later._process_new_videos(mock_youtube_client, [], "PL_MAIN", None) == []
+    mock_add.assert_not_called()
+
+    videos = [{"id": "v1", "title": "Test", "channel": "Ch"}]
+    remaining = auto_watch_later._process_new_videos(mock_youtube_client, videos, "PL_MAIN", None)
+    assert remaining == []
+    mock_add.assert_called_once_with(mock_youtube_client, videos, "PL_MAIN", None)
+
+
+def test_handle_quota_exceeded(mocker):
+    mock_save_pending = mocker.patch("auto_watch_later.save_pending_videos")
+    mock_save_scan = mocker.patch("auto_watch_later.save_scan_progress")
+
+    # Both pending videos and incomplete scan
+    scan_state = {"last_channel_index": 1, "shorts_cache": ["s1"]}
+    pending = [{"id": "v1"}]
+    auto_watch_later._handle_quota_exceeded(pending, scan_state, 3)
+    mock_save_pending.assert_called_once_with(pending)
+    mock_save_scan.assert_called_once_with(1, ["s1"])
+
+    # No pending videos, scan complete
+    mock_save_pending.reset_mock()
+    mock_save_scan.reset_mock()
+    auto_watch_later._handle_quota_exceeded([], {"last_channel_index": 3, "shorts_cache": []}, 3)
+    mock_save_pending.assert_not_called()
+    mock_save_scan.assert_not_called()
