@@ -64,15 +64,25 @@ By default, Shorts and teasers/trailers are excluded from the playlist. You can 
 | `INCLUDE_SHORTS` | `false` | Include YouTube Shorts in the main playlist |
 | `INCLUDE_TEASERS` | `false` | Include teasers and trailers (detected by title keywords) |
 | `SHORT_PLAYLIST` | `false` | Add Shorts to a dedicated "Automated Watch Later Shorts" playlist. Takes precedence over `INCLUDE_SHORTS`: when enabled, Shorts are always collected and routed to the dedicated playlist. |
+| `EXCLUDE_SHORTS_CHANNELS` | *(none)* | Comma-separated channels whose Shorts are ignored instead of being added to the dedicated Shorts playlist. Only used when `SHORT_PLAYLIST=true`. |
 
 ```yaml
 environment:
   - INCLUDE_SHORTS=true
   - INCLUDE_TEASERS=true
   - SHORT_PLAYLIST=true
+  - EXCLUDE_SHORTS_CHANNELS=UCxxxxxxxxxxxxxxxxxxxxxx,Some Channel Name
 ```
 
 These can be used in both local and Docker modes.
+
+#### Excluding channels from the Shorts playlist
+
+With `SHORT_PLAYLIST=true`, list a channel in `EXCLUDE_SHORTS_CHANNELS` to keep its Shorts out of "Automated Watch Later Shorts". Its Shorts are simply ignored, while its regular videos are still added to "Automated Watch Later" as usual.
+
+- Each entry is either a channel ID (`UC...`) or an exact channel name, as printed in the logs. Matching is case-insensitive.
+- Prefer the channel ID when the name contains a comma or may change. You can find it on the channel page under *About* → *Share channel* → *Copy channel ID*.
+- Without `SHORT_PLAYLIST=true` the variable has no effect (a line in the logs says so).
 
 ### Quota management
 

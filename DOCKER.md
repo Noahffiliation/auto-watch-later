@@ -107,4 +107,5 @@ environment:
   - INCLUDE_SHORTS=true
   - INCLUDE_TEASERS=true
   - SHORT_PLAYLIST=true
+  - EXCLUDE_SHORTS_CHANNELS=UCxxxxxxxxxxxxxxxxxxxxxx,Some Channel Name
 ```
