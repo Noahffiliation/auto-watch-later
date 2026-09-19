@@ -1192,6 +1192,28 @@ def test_scan_channels_with_active_filters(mock_youtube_client, mocker, monkeypa
     assert state["last_channel_index"] == 1
 
 
+def test_scan_channels_returns_partial_results_on_mid_scan_quota_exceeded(
+    mock_youtube_client, mocker
+):
+    # Quota dies while scanning the 2nd of 3 channels. The function must return the
+    # videos already found plus a scan_state pointing at channel 1 (not yet done),
+    # instead of raising and losing everything found so far.
+    mocker.patch("auto_watch_later.build_shorts_cache_for_channels", return_value=set())
+    mocker.patch(
+        "auto_watch_later.get_channel_videos",
+        side_effect=[
+            [{"id": "v1", "title": "T1", "channel": "C1"}],
+            auto_watch_later.QuotaExceededException(),
+        ],
+    )
+
+    vids, state = auto_watch_later.get_new_videos_with_shorts_filtering(
+        mock_youtube_client, ["UC1", "UC2", "UC3"], "2026-01-01T00:00:00+00:00"
+    )
+    assert vids == [{"id": "v1", "title": "T1", "channel": "C1"}]
+    assert state["last_channel_index"] == 1
+
+
 def test_add_videos_to_playlist_unhandled_exception(mock_youtube_client, mocker):
     mocker.patch("auto_watch_later.fetch_playlist_video_ids", return_value=set())
     mock_youtube_client.playlistItems().insert().execute.side_effect = Exception(
@@ -1205,7 +1227,43 @@ def test_add_videos_to_playlist_unhandled_exception(mock_youtube_client, mocker)
     assert remaining == [{"id": "v1", "title": "Test", "channel": "Ch"}]
 
 
-def test_main_quota_exceeded_with_pending_and_scan_state(mocker):
+def test_main_saves_scan_progress_when_scan_incomplete(mocker):
+    # Quota dies mid-scan (2 of 3 channels done) — this IS a genuine interruption,
+    # so scan progress must be persisted for the next run to resume from channel 2.
+    mocker.patch("auto_watch_later.setup_logging")
+    mocker.patch("auto_watch_later.cleanup_logging")
+    mocker.patch("auto_watch_later.get_authenticated_service")
+    mocker.patch("auto_watch_later.check_quota_usage", return_value=True)
+    mocker.patch("auto_watch_later.get_playlist_id", return_value="PL123")
+    mocker.patch("auto_watch_later.get_subscriptions", return_value=["c1", "c2", "c3"])
+    mocker.patch("auto_watch_later.get_last_check_time", return_value="time")
+    mocker.patch("auto_watch_later.load_pending_videos", return_value=[])
+    mocker.patch("auto_watch_later.load_scan_progress", return_value=None)
+    mocker.patch(
+        "auto_watch_later.get_new_videos_with_shorts_filtering",
+        return_value=(
+            [{"id": "p1", "title": "T1", "channel": "C1"}],
+            {"last_channel_index": 2, "shorts_cache": ["s1"]},
+        ),
+    )
+    mock_add = mocker.patch("auto_watch_later.add_to_watch_later")
+
+    mock_save_pending = mocker.patch("auto_watch_later.save_pending_videos")
+    mock_save_scan = mocker.patch("auto_watch_later.save_scan_progress")
+
+    auto_watch_later.main()
+
+    mock_save_pending.assert_called_once_with([{"id": "p1", "title": "T1", "channel": "C1"}])
+    mock_save_scan.assert_called_once_with(2, ["s1"])
+    # The scan itself was the interruption — we never even reach the add-to-playlist step.
+    mock_add.assert_not_called()
+
+
+def test_main_quota_exceeded_during_add_after_full_scan(mocker):
+    # Regression test: the scan completes fully (last_channel_index == len(channel_ids)),
+    # and quota is hit afterwards while adding to the playlist. Since the scan genuinely
+    # finished, scan_progress.json must NOT be written — otherwise the next run's resume
+    # logic treats the scan as "already done" and silently skips searching for new videos.
     mocker.patch("auto_watch_later.setup_logging")
     mocker.patch("auto_watch_later.cleanup_logging")
     mocker.patch("auto_watch_later.get_authenticated_service")
@@ -1219,7 +1277,7 @@ def test_main_quota_exceeded_with_pending_and_scan_state(mocker):
         "auto_watch_later.get_new_videos_with_shorts_filtering",
         return_value=(
             [{"id": "p1", "title": "T1", "channel": "C1"}],
-            {"last_channel_index": 2, "shorts_cache": ["s1"]},
+            {"last_channel_index": 1, "shorts_cache": ["s1"]},
         ),
     )
     mocker.patch(
@@ -1233,7 +1291,65 @@ def test_main_quota_exceeded_with_pending_and_scan_state(mocker):
     auto_watch_later.main()
 
     mock_save_pending.assert_called_once_with([{"id": "p1", "title": "T1", "channel": "C1"}])
-    mock_save_scan.assert_called_once_with(2, ["s1"])
+    mock_save_scan.assert_not_called()
+
+
+def test_main_resumes_pending_videos_and_hits_quota_again(mocker):
+    # Regression test: quota was already exceeded once while adding a previous run's
+    # pending videos. If it happens again while re-adding them, they must still be
+    # persisted (and logged) rather than silently left untracked.
+    mocker.patch("auto_watch_later.setup_logging")
+    mocker.patch("auto_watch_later.cleanup_logging")
+    mocker.patch("auto_watch_later.get_authenticated_service")
+    mocker.patch("auto_watch_later.check_quota_usage", return_value=True)
+    mocker.patch("auto_watch_later.get_playlist_id", return_value="PL123")
+    mocker.patch("auto_watch_later.get_last_check_time", return_value="time")
+
+    saved_pending = [{"id": "v_pending", "title": "T", "channel": "C"}]
+    mocker.patch("auto_watch_later.load_pending_videos", return_value=saved_pending)
+    mocker.patch("auto_watch_later.load_scan_progress", return_value=None)
+    mocker.patch(
+        "auto_watch_later.add_to_watch_later",
+        side_effect=auto_watch_later.QuotaExceededException(),
+    )
+
+    mock_save_pending = mocker.patch("auto_watch_later.save_pending_videos")
+
+    auto_watch_later.main()
+
+    mock_save_pending.assert_called_once_with(saved_pending)
+
+
+def test_main_ignores_stale_complete_scan_progress(mocker):
+    # A scan_progress.json left over from before this fix (or from a run where only
+    # the add-to-playlist step failed) can claim the scan already covers every
+    # channel. main() must detect that, discard it, and clear the file — instead of
+    # passing it through as a valid resume point and skipping the scan entirely.
+    mocker.patch("auto_watch_later.setup_logging")
+    mocker.patch("auto_watch_later.cleanup_logging")
+    mocker.patch("auto_watch_later.get_authenticated_service")
+    mocker.patch("auto_watch_later.check_quota_usage", return_value=True)
+    mocker.patch("auto_watch_later.get_playlist_id", return_value="PL123")
+    mocker.patch("auto_watch_later.get_subscriptions", return_value=["c1"])
+    mocker.patch("auto_watch_later.get_last_check_time", return_value="time")
+    mocker.patch("auto_watch_later.load_pending_videos", return_value=[])
+    mocker.patch(
+        "auto_watch_later.load_scan_progress",
+        return_value={"last_channel_index": 1, "shorts_cache": ["s1"]},
+    )
+    mock_clear_scan = mocker.patch("auto_watch_later.clear_scan_progress")
+    mock_scan = mocker.patch(
+        "auto_watch_later.get_new_videos_with_shorts_filtering",
+        return_value=([], {"last_channel_index": 1, "shorts_cache": ["s1"]}),
+    )
+    mocker.patch("auto_watch_later.save_check_time")
+    mocker.patch("auto_watch_later.clear_pending_videos")
+
+    auto_watch_later.main()
+
+    mock_clear_scan.assert_called()
+    # The stale progress must not be forwarded as a resume point.
+    assert mock_scan.call_args.kwargs["resume_progress"] is None
 
 
 def test_scan_channels_with_short_playlist_filter(mock_youtube_client, mocker, monkeypatch):

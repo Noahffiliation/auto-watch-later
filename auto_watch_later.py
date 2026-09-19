@@ -969,10 +969,14 @@ def get_new_videos_with_shorts_filtering(
 
     Returns:
         Tuple (new_videos, scan_state) where scan_state is a dict with
-        'last_channel_index' and 'shorts_cache' — used by the caller to
-        persist on quota exceeded.
+        'last_channel_index' and 'shorts_cache'. If quota is exceeded while
+        scanning channels, this returns early with the partial new_videos found
+        so far and a scan_state pointing at the channel reached — the caller
+        detects an incomplete scan by comparing scan_state['last_channel_index']
+        to len(channel_ids).
 
-    Raises QuotaExceededException if the API quota is hit at any point.
+    Raises QuotaExceededException if the API quota is hit while building the
+    Shorts cache (i.e. before any channel has been scanned for videos).
     """
     log_print(f"Checking for new videos since {last_check_time}...")
 
@@ -1017,8 +1021,20 @@ def get_new_videos_with_shorts_filtering(
         )
 
         for channel_id in batch:
-            # QuotaExceededException propagates up — caller will persist state
-            channel_videos = get_channel_videos(youtube, channel_id, last_check_time, shorts_cache)
+            try:
+                channel_videos = get_channel_videos(
+                    youtube, channel_id, last_check_time, shorts_cache
+                )
+            except QuotaExceededException:
+                log_print(
+                    f"Quota exceeded mid-scan at channel {absolute_index}/{total}; "
+                    "returning partial results for the caller to persist."
+                )
+                scan_state = {
+                    "last_channel_index": absolute_index,
+                    "shorts_cache": shorts_cache,
+                }
+                return new_videos, scan_state
             new_videos.extend(channel_videos)
             absolute_index += 1
 
@@ -1364,6 +1380,7 @@ def main():
         # In-memory state — only written to disk on quota exceeded
         pending_videos = []  # videos found but not yet added
         scan_state = None  # current scan position + shorts cache
+        channel_ids = []  # populated once subscriptions are fetched below
 
         try:
             # --- Resume from previous quota-exceeded run if applicable ---
@@ -1374,9 +1391,11 @@ def main():
                 log_print(
                     f"\nResuming: adding {len(saved_pending)} pending videos from previous run..."
                 )
+                pending_videos = saved_pending  # persist correctly if quota hits again here
                 remaining = add_videos_to_playlists(
                     youtube, saved_pending, playlist_id, shorts_playlist_id
                 )
+                pending_videos = remaining
                 if not remaining:
                     clear_pending_videos()
                     log_print("All pending videos processed. Proceeding with new scan.")
@@ -1386,16 +1405,32 @@ def main():
             channel_ids = get_subscriptions(youtube)
             last_check_time = get_last_check_time()
 
+            # A saved scan_state only represents a real interruption if it stopped
+            # short of the full channel list. A scan that finished but whose
+            # *add-to-playlist* step then hit quota would otherwise be replayed as
+            # "already scanned", silently skipping the search for new videos next run.
+            if saved_progress and saved_progress.get("last_channel_index", 0) >= len(channel_ids):
+                log_print(
+                    "Saved scan progress covers the full channel list; ignoring it and clearing it."
+                )
+                clear_scan_progress()
+                saved_progress = None
+
             new_videos, scan_state = get_new_videos_with_shorts_filtering(
                 youtube, channel_ids, last_check_time, resume_progress=saved_progress
             )
+            pending_videos = new_videos  # track in memory before any quota-risking step below
+
+            if scan_state["last_channel_index"] < len(channel_ids):
+                # Scan itself was interrupted mid-way (not the add-to-playlist step) —
+                # route through the same quota-exceeded handling below.
+                raise QuotaExceededException()
 
             if new_videos:
                 log_print("\nNew videos found:")
                 for i, video in enumerate(new_videos):
                     log_print(f"{i + 1}. {video['title']} - {video['channel']}")
 
-                pending_videos = new_videos  # track in memory before adding
                 remaining = add_videos_to_playlists(
                     youtube, new_videos, playlist_id, shorts_playlist_id
                 )
@@ -1416,7 +1451,7 @@ def main():
             if pending_videos:
                 save_pending_videos(pending_videos)
                 log_print(f"Saved {len(pending_videos)} pending videos to {PENDING_VIDEOS_FILE}.")
-            if scan_state:
+            if scan_state and scan_state["last_channel_index"] < len(channel_ids):
                 save_scan_progress(scan_state["last_channel_index"], scan_state["shorts_cache"])
                 log_print(f"Saved scan progress at channel {scan_state['last_channel_index']}.")
             log_print("The next run will resume exactly where this one stopped.")
