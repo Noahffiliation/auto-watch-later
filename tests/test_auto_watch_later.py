@@ -731,6 +731,13 @@ def test_env_bool(mocker):
     assert auto_watch_later._env_bool("TEST_MISSING", default=False) is False
 
 
+def test_env_list(mocker):
+    mocker.patch.dict("os.environ", {"TEST_LIST": " UC1 , ,Foo Bar,", "TEST_EMPTY": ""})
+    assert auto_watch_later._env_list("TEST_LIST") == {"uc1", "foo bar"}
+    assert auto_watch_later._env_list("TEST_EMPTY") == frozenset()
+    assert auto_watch_later._env_list("TEST_MISSING") == frozenset()
+
+
 def test_quota_tracker_and_report(capsys):
     qt = auto_watch_later.QuotaTracker()
     qt.track("playlists.list")
@@ -967,6 +974,124 @@ def test_filter_videos_short_playlist(mocker):
     assert "is_short" not in res[1]
 
 
+def test_is_channel_excluded_from_shorts(monkeypatch):
+    monkeypatch.setattr(
+        auto_watch_later, "EXCLUDE_SHORTS_CHANNELS", frozenset({"uc_excluded", "foo bar"})
+    )
+
+    # Match by ID, case-insensitive
+    assert auto_watch_later.is_channel_excluded_from_shorts("UC_EXCLUDED", "Other") is True
+    # Match by name, case-insensitive
+    assert auto_watch_later.is_channel_excluded_from_shorts("UC_OTHER", "FOO bar") is True
+    # Unknown ID, match by name
+    assert auto_watch_later.is_channel_excluded_from_shorts(None, "Foo Bar") is True
+    # No match
+    assert auto_watch_later.is_channel_excluded_from_shorts("UC_OTHER", "Other") is False
+    assert auto_watch_later.is_channel_excluded_from_shorts(None, "Other") is False
+
+    monkeypatch.setattr(auto_watch_later, "EXCLUDE_SHORTS_CHANNELS", frozenset())
+    assert auto_watch_later.is_channel_excluded_from_shorts("UC_EXCLUDED", "Foo Bar") is False
+
+
+def test_filter_videos_short_playlist_skips_excluded_channel_by_id(monkeypatch):
+    monkeypatch.setattr(auto_watch_later, "SHORT_PLAYLIST", True)
+    monkeypatch.setattr(auto_watch_later, "EXCLUDE_SHORTS_CHANNELS", frozenset({"uc_excluded"}))
+
+    videos = [
+        {"id": "v_short", "title": "Short", "channel": "C"},
+        {"id": "v_long", "title": "Long", "channel": "C"},
+    ]
+
+    res = auto_watch_later.filter_videos(videos, {"v_short"}, channel_id="UC_EXCLUDED")
+
+    # The Short is ignored, the long video still goes to the main playlist (no 'is_short' tag)
+    assert [v["id"] for v in res] == ["v_long"]
+    assert "is_short" not in res[0]
+
+
+def test_filter_videos_short_playlist_skips_excluded_channel_by_name(monkeypatch):
+    monkeypatch.setattr(auto_watch_later, "SHORT_PLAYLIST", True)
+    monkeypatch.setattr(auto_watch_later, "EXCLUDE_SHORTS_CHANNELS", frozenset({"some channel"}))
+
+    videos = [
+        {"id": "v_short", "title": "Short", "channel": "Some Channel"},
+        {"id": "v_long", "title": "Long", "channel": "Some Channel"},
+    ]
+
+    res = auto_watch_later.filter_videos(videos, {"v_short"}, channel_id="UC_ANY")
+
+    assert [v["id"] for v in res] == ["v_long"]
+    assert "is_short" not in res[0]
+
+
+def test_filter_videos_short_playlist_keeps_shorts_of_other_channels(monkeypatch):
+    monkeypatch.setattr(auto_watch_later, "SHORT_PLAYLIST", True)
+    monkeypatch.setattr(auto_watch_later, "EXCLUDE_SHORTS_CHANNELS", frozenset({"uc_excluded"}))
+
+    videos = [{"id": "v_short", "title": "Short", "channel": "Other"}]
+
+    res = auto_watch_later.filter_videos(videos, {"v_short"}, channel_id="UC_OTHER")
+
+    assert len(res) == 1
+    assert res[0].get("is_short") is True
+
+
+def test_filter_videos_exclusion_ignored_without_short_playlist(monkeypatch):
+    monkeypatch.setattr(auto_watch_later, "SHORT_PLAYLIST", False)
+    monkeypatch.setattr(auto_watch_later, "INCLUDE_SHORTS", True)
+    monkeypatch.setattr(auto_watch_later, "EXCLUDE_SHORTS_CHANNELS", frozenset({"uc_excluded"}))
+
+    videos = [{"id": "v_short", "title": "Short", "channel": "C"}]
+
+    res = auto_watch_later.filter_videos(videos, {"v_short"}, channel_id="UC_EXCLUDED")
+
+    # The exclusion only concerns the dedicated Shorts playlist
+    assert len(res) == 1
+    assert "is_short" not in res[0]
+
+
+def test_log_excluded_shorts_channels(monkeypatch, capsys):
+    monkeypatch.setattr(auto_watch_later, "log_file", None)
+
+    monkeypatch.setattr(auto_watch_later, "EXCLUDE_SHORTS_CHANNELS", frozenset())
+    auto_watch_later._log_excluded_shorts_channels()
+    assert capsys.readouterr().out == ""
+
+    monkeypatch.setattr(auto_watch_later, "EXCLUDE_SHORTS_CHANNELS", frozenset({"a", "b"}))
+    monkeypatch.setattr(auto_watch_later, "SHORT_PLAYLIST", True)
+    auto_watch_later._log_excluded_shorts_channels()
+    assert "Shorts skipped for 2 channel(s)" in capsys.readouterr().out
+
+    monkeypatch.setattr(auto_watch_later, "SHORT_PLAYLIST", False)
+    auto_watch_later._log_excluded_shorts_channels()
+    assert "ignored" in capsys.readouterr().out
+
+
+def test_get_videos_from_activities_skips_shorts_of_excluded_channel(
+    mock_youtube_client, monkeypatch
+):
+    monkeypatch.setattr(auto_watch_later, "SHORT_PLAYLIST", True)
+    monkeypatch.setattr(auto_watch_later, "EXCLUDE_SHORTS_CHANNELS", frozenset({"uc123"}))
+    mock_youtube_client.activities().list.return_value.execute.return_value = {
+        "items": [
+            {
+                "snippet": {"type": "upload", "title": "A Short", "channelTitle": "Channel 1"},
+                "contentDetails": {"upload": {"videoId": "v_short"}},
+            },
+            {
+                "snippet": {"type": "upload", "title": "A Long", "channelTitle": "Channel 1"},
+                "contentDetails": {"upload": {"videoId": "v_long"}},
+            },
+        ]
+    }
+
+    videos = auto_watch_later.get_videos_from_activities(
+        mock_youtube_client, "UC123", "2025-01-01Z", {"v_short"}
+    )
+
+    assert [v["id"] for v in videos] == ["v_long"]
+
+
 def test_get_videos_from_activities_exception(mock_youtube_client):
     # Quota exceeded exception
     mock_youtube_client.activities().list().execute.side_effect = Exception("quotaExceeded")
@@ -1001,6 +1126,29 @@ def test_get_videos_from_search_cases(mock_youtube_client):
         mock_youtube_client, "UC123", "2025-01-01Z", set()
     )
     assert res == []
+
+
+def test_get_videos_from_search_skips_shorts_of_excluded_channel(mock_youtube_client, monkeypatch):
+    monkeypatch.setattr(auto_watch_later, "SHORT_PLAYLIST", True)
+    monkeypatch.setattr(auto_watch_later, "EXCLUDE_SHORTS_CHANNELS", frozenset({"uc123"}))
+    mock_youtube_client.search().list.return_value.execute.return_value = {
+        "items": [
+            {
+                "id": {"videoId": "v_short"},
+                "snippet": {"title": "A Short", "channelTitle": "Channel 1"},
+            },
+            {
+                "id": {"videoId": "v_long"},
+                "snippet": {"title": "A Long", "channelTitle": "Channel 1"},
+            },
+        ]
+    }
+
+    videos = auto_watch_later.get_videos_from_search(
+        mock_youtube_client, "UC123", "2025-01-01Z", {"v_short"}
+    )
+
+    assert [v["id"] for v in videos] == ["v_long"]
 
 
 def test_get_new_videos_with_shorts_filtering_resume(mock_youtube_client, mocker):
