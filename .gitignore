@@ -18,3 +18,4 @@ container-sbom.spdx.json
 trivy-results.sarif
 grype-results.*
 .scannerwork/
+build/
